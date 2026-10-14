@@ -1,0 +1,105 @@
+/* Layout: full-bleed canvas game with floating cartoon-lab panels on top. */
+:root {
+  --ink: #1d2140;        /* deep lab navy, panel base */
+  --panel: rgba(16, 19, 40, 0.92);
+  --atom: #3fe0ff;       /* Jimmy's atom-logo cyan */
+  --jimmy: #e2312f;      /* Jimmy's red shirt */
+  --neutron: #7aff6a;    /* neutronium green */
+  --flurp: #ffe14f;      /* highlight yellow */
+  --text: #f4f6ff;
+  --muted: #a9b0d0;
+  --display: 'Bungee', Impact, 'Arial Black', sans-serif;
+  --body: 'Fredoka', 'Trebuchet MS', system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e1c; color: var(--text); font-family: var(--body); }
+canvas#game { display: block; position: fixed; inset: 0; cursor: none; }
+
+/* ---------- Title ---------- */
+#title {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(29, 33, 64, 0.55), rgba(11, 14, 28, 0.9));
+  overflow-y: auto; z-index: 10;
+}
+.title-card { max-width: 620px; width: 100%; text-align: center; }
+.title-card h1 {
+  font-family: var(--display); font-weight: 400; margin: 0;
+  font-size: clamp(34px, 8vw, 68px); line-height: 0.95; color: var(--jimmy);
+  text-shadow: 0 4px 0 #7a1210, 0 8px 0 var(--ink), 0 0 40px rgba(226, 49, 47, 0.4);
+  -webkit-text-stroke: 2px #fff; text-wrap: balance;
+}
+.t-small { display: block; font-family: var(--body); font-weight: 700; font-size: 16px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--atom); -webkit-text-stroke: 0; text-shadow: none; margin-bottom: 10px; }
+.t-sub { font-family: var(--display); font-size: clamp(16px, 3.4vw, 24px); color: var(--flurp); margin: 18px 0 8px; letter-spacing: 0.06em; }
+.t-blurb { color: var(--text); font-size: 16px; line-height: 1.5; max-width: 52ch; margin: 0 auto 22px; }
+.t-note { color: var(--muted); font-size: 13px; letter-spacing: 0.05em; margin-top: 16px; }
+details { margin-top: 18px; text-align: left; background: var(--panel); border: 1px solid rgba(63, 224, 255, 0.25); border-radius: 14px; padding: 10px 16px; }
+summary { cursor: pointer; font-weight: 700; color: var(--atom); text-transform: uppercase; letter-spacing: 0.1em; font-size: 13px; }
+
+.atom { position: relative; width: 96px; height: 96px; margin: 0 auto 14px; }
+.atom span { position: absolute; inset: 30px 0; border: 3px solid var(--atom); border-radius: 50%; animation: spin 6s linear infinite; }
+.atom span:nth-child(2) { transform: rotate(60deg); animation-delay: -2s; }
+.atom span:nth-child(3) { transform: rotate(-60deg); animation-delay: -4s; }
+.atom i { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: var(--flurp); box-shadow: 0 0 18px var(--flurp); }
+@keyframes spin { from { rotate: 0deg; } to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .atom span { animation: none; } }
+
+/* ---------- Buttons ---------- */
+.btn {
+  font-family: var(--body); font-weight: 700; font-size: 15px; color: var(--text);
+  background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px; padding: 9px 20px; cursor: pointer; transition: transform 0.08s, background 0.15s;
+}
+.btn:hover:not([disabled]) { background: rgba(255, 255, 255, 0.16); transform: translateY(-1px); }
+.btn:focus-visible { outline: 3px solid var(--flurp); outline-offset: 2px; }
+.btn.primary { background: var(--jimmy); border-color: #ff8a86; box-shadow: 0 4px 0 #7a1210; }
+.btn.primary:hover:not([disabled]) { background: #f04440; }
+.btn.danger { border-color: #ff8a86; color: #ffb3b0; }
+.btn.big { font-size: 18px; padding: 12px 30px; font-family: var(--display); font-weight: 400; letter-spacing: 0.04em; }
+.btn.small { font-size: 13px; padding: 6px 14px; }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.btn-row.center { justify-content: center; }
+
+/* ---------- Modals ---------- */
+#overlay { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+.modal-wrap { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(5, 7, 18, 0.45); pointer-events: auto; }
+.modal {
+  width: min(520px, 100%); max-height: calc(100% - 32px); overflow-y: auto;
+  background: var(--panel); border: 2px solid rgba(63, 224, 255, 0.45); border-radius: 18px;
+  padding: 20px 22px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  animation: pop 0.16s ease-out;
+}
+.modal.wide { width: min(640px, 100%); }
+.modal.map { width: min(800px, 100%); }
+.modal.dialogue { border-color: var(--flurp); }
+@keyframes pop { from { transform: scale(0.94); opacity: 0; } }
+.dlg-name { font-family: var(--display); color: var(--flurp); font-size: 20px; letter-spacing: 0.03em; margin-bottom: 6px; }
+.dlg-text { font-size: 17px; line-height: 1.5; margin: 6px 0 0; max-width: 60ch; }
+.dlg-meta { display: block; margin-top: 12px; font-size: 14px; color: var(--neutron); }
+.modal h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--atom); margin: 18px 0 8px; }
+.muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.neu { color: var(--neutron); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
+.list li > div { min-width: 0; }
+.list small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; line-height: 1.4; }
+.tag { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.pips { color: var(--neutron); letter-spacing: 2px; font-size: 11px; margin-left: 4px; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+#bigmap { width: 100%; height: auto; max-width: 100%; border-radius: 10px; image-rendering: pixelated; background: #2f7a34; display: block; margin: 8px 0; }
+
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 6px 18px; font-size: 14px; margin-top: 10px; }
+kbd { display: inline-block; min-width: 22px; text-align: center; font-family: var(--body); font-weight: 700; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); border-bottom: 2px solid rgba(255, 255, 255, 0.25); color: var(--flurp); }
+
+/* ---------- Toasts & banner ---------- */
+#toasts { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 15; width: min(560px, calc(100% - 32px)); }
+.toast { background: var(--panel); border: 1px solid rgba(63, 224, 255, 0.4); border-radius: 12px; padding: 8px 14px; font-size: 14px; font-weight: 600; text-align: center; transition: opacity 0.5s, transform 0.5s; }
+.toast.out { opacity: 0; transform: translateY(-8px); }
+#banner { position: fixed; left: 0; right: 0; top: 18%; text-align: center; pointer-events: none; z-index: 14; opacity: 0; padding: 0 16px; }
+#banner.show { animation: banner 3.6s ease-out forwards; }
+.banner-sub { font-weight: 700; letter-spacing: 0.25em; font-size: 13px; color: var(--neutron); text-shadow: 0 2px 6px #000; }
+.banner-title { font-family: var(--display); font-size: clamp(26px, 5vw, 46px); color: #fff; -webkit-text-stroke: 1.5px var(--ink); text-shadow: 0 4px 0 var(--ink), 0 0 30px rgba(63, 224, 255, 0.6); text-wrap: balance; }
+@keyframes banner { 0% { opacity: 0; transform: scale(1.3); } 10% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
