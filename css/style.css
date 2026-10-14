@@ -17,6 +17,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e1c; color: var(--text); font-family: var(--body); }
 canvas#game { display: block; position: fixed; inset: 0; cursor: none; }
+canvas#hud { position: fixed; inset: 0; pointer-events: none; }
 
 /* ---------- Title ---------- */
 #title {

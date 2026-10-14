@@ -48,7 +48,7 @@ function moveWithCollision(m, e, dx, dy) {
 function particles(m, x, y, n, color, speed = 120, size = 3, life = 0.6) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random() * 0.7);
-    m.effects.push({ type: 'p', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: life * (0.6 + Math.random() * 0.6), max: life, color, size });
+    m.effects.push({ type: 'p', x, y, z: rand(0.3, 1.1), vz: rand(1, 4), vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: life * (0.6 + Math.random() * 0.6), max: life, color, size });
   }
 }
 function floatText(m, x, y, text, color = '#fff', size = 14) {
@@ -64,25 +64,13 @@ function beam(m, x1, y1, x2, y2, color, life = 0.15, width = 4) {
 function updateEffects(m, dt) {
   for (const e of m.effects) {
     e.life -= dt;
-    if (e.type === 'p') { e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.92; e.vy *= 0.92; }
+    if (e.type === 'p') {
+      e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.92; e.vy *= 0.92;
+      if (e.z !== undefined) { e.vz -= 9 * dt; e.z += e.vz * dt; if (e.z < 0.02) { e.z = 0.02; e.vz *= -0.3; } }
+    }
     if (e.type === 'text') e.y -= 30 * dt;
   }
   m.effects = m.effects.filter((e) => e.life > 0);
-}
-
-function drawEffects(ctx, m) {
-  for (const e of m.effects) {
-    const t = clamp(e.life / e.max, 0, 1);
-    if (e.type === 'p') { ctx.globalAlpha = t; ctx.fillStyle = e.color; ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size); }
-    else if (e.type === 'ring') { ctx.globalAlpha = t; ctx.strokeStyle = e.color; ctx.lineWidth = 4 * t + 1; ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * (1 - t * 0.7), 0, 7); ctx.stroke(); }
-    else if (e.type === 'beam') { ctx.globalAlpha = t; ctx.strokeStyle = e.color; ctx.lineWidth = e.width; ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke(); }
-    else if (e.type === 'text') {
-      ctx.globalAlpha = Math.min(1, t * 2);
-      ctx.font = `bold ${e.size}px Bungee, Fredoka, Impact, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(e.text, e.x, e.y); ctx.fillStyle = e.color; ctx.fillText(e.text, e.x, e.y);
-    }
-  }
-  ctx.globalAlpha = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +123,7 @@ function explosion(m, x, y, radius, dmg, team, opts = {}) {
   Sfx.play('explode');
   G.shake = Math.max(G.shake, 8);
   ring(m, x, y, radius, opts.color || '#ffb23f', 0.45);
+  m.effects.push({ type: 'ball', x, y, radius: radius * 0.8, color: opts.color || '#ffb23f', life: 0.35, max: 0.35 });
   particles(m, x, y, 26, opts.color || '#ffb23f', 260, 5, 0.6);
   particles(m, x, y, 14, '#ff5a2a', 160, 6, 0.5);
   particles(m, x, y, 10, '#555', 90, 7, 0.9);
@@ -276,9 +265,7 @@ class Player extends Entity {
     }
     this.alt = lerp(this.alt, this.jetpack ? 18 : 0, Math.min(1, dt * 8));
 
-    let ix = 0, iy = 0;
-    if (input.left) ix -= 1; if (input.right) ix += 1;
-    if (input.up) iy -= 1; if (input.down) iy += 1;
+    let ix = input.mx, iy = input.my;
     const len = Math.hypot(ix, iy) || 1;
     ix /= len; iy /= len;
     let speed = this.jetpack ? 270 : input.sprint ? 235 : 155;
@@ -311,28 +298,6 @@ class Player extends Entity {
     if (on) { this.jetpack = true; Sfx.play('jet'); return; }
     this.jetpack = false;
     if (m.circleBlocked(this.x, this.y, this.r, 'walk')) { const p = m.findOpen(this.x, this.y, this.r, 'walk'); this.x = p.x; this.y = p.y; }
-  }
-  draw(ctx) {
-    if (this.vehicle) return;
-    if (this.alt > 1) {
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 2, 9, 4, 0, 0, 7); ctx.fill();
-    }
-    const y = this.y - this.alt;
-    if (this.jetpack) {
-      ctx.fillStyle = '#9aa6bc'; roundRect(ctx, this.x - 9, y - 22, 18, 12, 3); ctx.fill();
-      ctx.fillStyle = Math.random() < 0.5 ? '#ffb23f' : '#ff5a2a';
-      ctx.beginPath(); ctx.moveTo(this.x - 7, y - 10); ctx.lineTo(this.x - 4, y - 2 + rand(0, 6)); ctx.lineTo(this.x - 1, y - 10); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(this.x + 1, y - 10); ctx.lineTo(this.x + 4, y - 2 + rand(0, 6)); ctx.lineTo(this.x + 7, y - 10); ctx.fill();
-    }
-    drawPerson(ctx, this.x, y, LOOKS.jimmy, this.facing, this.moving ? this.walkPhase : 0);
-    // the current invention in hand
-    const inv = INVENTIONS[this.invIndex];
-    const hx = this.x + Math.cos(this.facing) * 12, hy = y - 16 + Math.sin(this.facing) * 6;
-    ctx.save(); ctx.translate(hx, hy); ctx.rotate(this.facing);
-    ctx.fillStyle = '#5a6478'; ctx.fillRect(-2, -2.5, 12, 5);
-    ctx.fillStyle = inv.color; ctx.fillRect(8, -3, 4, 6);
-    ctx.restore();
-    if (this.flash > 0) { ctx.globalAlpha = 0.5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x, y - 16, 14, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
   }
   die() {
     this.dead = true;
@@ -383,7 +348,7 @@ class Goddard extends Entity {
       gx = target.x + Math.cos(a) * 110; gy = target.y + Math.sin(a) * 110;
     } else {
       const fa = p.vehicle ? p.vehicle.angle : p.facing;
-      gx = p.x - Math.cos(fa) * 34 + Math.cos(G.time) * 6; gy = p.y - Math.sin(fa) * 34 + 6;
+      gx = p.x + Math.cos(fa + 2.2) * 36 + Math.cos(G.time) * 6; gy = p.y + Math.sin(fa + 2.2) * 36; // trail behind-left, out of the camera's way
     }
     const d = distXY(this.x, this.y, gx, gy);
     if (d > 6) {
@@ -398,7 +363,7 @@ class Goddard extends Entity {
       if (this.fireCd <= 0) {
         this.fireCd = 0.55;
         const a = angleTo(this, target);
-        m.projectiles.push(new Projectile({ x: this.x, y: this.y - 10, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, team: 'player', dmg: 7 * (1 + 0.35 * (G.upgrades.goddard || 0)), color: '#ff4040', life: 0.7, r: 3 }));
+        m.projectiles.push(new Projectile({ x: this.x, y: this.y, h: 0.75, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, team: 'player', dmg: 7 * (1 + 0.35 * (G.upgrades.goddard || 0)), color: '#ff4040', life: 0.7, r: 3 }));
       }
     }
     this.barkT -= dt;
@@ -413,46 +378,6 @@ class Goddard extends Entity {
     particles(G.map, this.x, this.y, 20, '#aab', 120, 4, 0.8);
     G.toast('Goddard is rebooting...');
   }
-  draw(ctx) {
-    if (this.isBike) return;
-    const off = this.offline > 0;
-    const bob = off ? 0 : Math.sin(G.time * 5) * 2;
-    const x = this.x, y = this.y - 6 + bob;
-    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, this.y + 4, 11, 4, 0, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(x, y);
-    if (Math.cos(this.facing) < 0) ctx.scale(-1, 1);
-    if (off) ctx.rotate(0.3);
-    // legs
-    ctx.fillStyle = '#7d8696';
-    const lp = Math.sin(this.anim) * 2;
-    ctx.fillRect(-8, 2 + lp, 3, 6); ctx.fillRect(4, 2 - lp, 3, 6);
-    // body
-    ctx.fillStyle = '#b8c0cc'; roundRect(ctx, -11, -6, 20, 11, 4); ctx.fill();
-    ctx.fillStyle = '#e2312f'; ctx.fillRect(-4, -6, 3, 11);
-    // tail antenna
-    ctx.strokeStyle = '#7d8696'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-11, -3); ctx.lineTo(-16, -10); ctx.stroke();
-    ctx.fillStyle = '#ff4040'; ctx.beginPath(); ctx.arc(-16, -11, 2, 0, 7); ctx.fill();
-    // head
-    ctx.fillStyle = '#c8d0dc'; roundRect(ctx, 4, -15, 13, 11, 4); ctx.fill();
-    ctx.fillStyle = '#3a4050'; ctx.fillRect(12, -10, 6, 4);
-    ctx.fillStyle = off ? '#333' : '#3fe0ff'; ctx.beginPath(); ctx.arc(10, -11, 2, 0, 7); ctx.fill();
-    // ears
-    ctx.fillStyle = '#9aa6bc';
-    ctx.beginPath(); ctx.moveTo(5, -14); ctx.lineTo(3, -22); ctx.lineTo(9, -15); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(9, -14); ctx.lineTo(9, -22); ctx.lineTo(13, -15); ctx.fill();
-    ctx.restore();
-    if (this.flash > 0) { ctx.globalAlpha = 0.5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y - 4, 13, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
-    if (this.bubble) drawBubble(ctx, x, y - 30, this.bubble.text);
-  }
-}
-
-function drawBubble(ctx, x, y, text) {
-  ctx.font = 'bold 12px Fredoka, sans-serif';
-  const w = ctx.measureText(text).width + 14;
-  ctx.fillStyle = '#ffffff'; roundRect(ctx, x - w / 2, y - 18, w, 20, 8); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x - 4, y + 2); ctx.lineTo(x, y + 8); ctx.lineTo(x + 4, y + 2); ctx.fill();
-  ctx.fillStyle = '#1d2140'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y - 8);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,15 +413,11 @@ class Clone extends Entity {
       this.fireCd -= dt;
       if (this.fireCd <= 0) {
         this.fireCd = 0.45;
-        m.projectiles.push(new Projectile({ x: this.x, y: this.y - 14, vx: Math.cos(this.facing) * 600, vy: Math.sin(this.facing) * 600, team: 'player', dmg: 8 * powerMult(), color: '#7ff0ff', life: 0.7 }));
+        m.projectiles.push(new Projectile({ x: this.x, y: this.y, vx: Math.cos(this.facing) * 600, vy: Math.sin(this.facing) * 600, team: 'player', dmg: 8 * powerMult(), color: '#7ff0ff', life: 0.7 }));
       }
     }
   }
   die() { this.dead = true; particles(G.map, this.x, this.y, 14, '#7ff0ff', 120, 4, 0.5); }
-  draw(ctx) {
-    drawPerson(ctx, this.x, this.y, LOOKS.jimmy, this.facing, this.walkPhase, { alpha: this.life < 2 ? 0.3 + 0.3 * Math.sin(G.time * 20) : 0.75 });
-    ctx.fillStyle = '#7ff0ff'; ctx.font = 'bold 9px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('CLONE', this.x, this.y - 44);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -552,24 +473,6 @@ class NPC extends Entity {
       if (this.idleLines && !this.bubble && Math.random() < dt * 0.04 && dist(this, p) < 400) this.say(pick(this.idleLines));
     }
   }
-  draw(ctx) {
-    drawPerson(ctx, this.x, this.y, this.look, this.facing, this.moving ? this.walkPhase : 0);
-    const p = G.player;
-    const top = this.y - 30 - 14 * (this.look.height || 1) - (this.look.hairStyle === 'beehive' ? 14 : 0);
-    if (!this.citizen && dist(this, p) < 220) {
-      ctx.font = 'bold 11px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(this.name, this.x, top - 4);
-      ctx.fillStyle = '#fff'; ctx.fillText(this.name, this.x, top - 4);
-    }
-    const marker = Missions.npcMarker(this.name);
-    if (marker) {
-      const bob = Math.sin(G.time * 4) * 3;
-      ctx.font = 'bold 22px Bungee, Fredoka, sans-serif'; ctx.textAlign = 'center';
-      ctx.lineWidth = 4; ctx.strokeStyle = '#1d2140'; ctx.strokeText(marker, this.x, top - 22 + bob);
-      ctx.fillStyle = marker === '!' ? '#ffe14f' : '#7aff6a'; ctx.fillText(marker, this.x, top - 22 + bob);
-    }
-    if (this.bubble) drawBubble(ctx, this.x, top - (marker ? 40 : 14), this.bubble.text);
-  }
 }
 
 // Things that need picking up for missions (Carl's llamas, Hugh's ducks...)
@@ -599,38 +502,6 @@ class MissionItem extends Entity {
       Sfx.play('pickup');
       particles(m, this.x, this.y, 14, '#ffe14f', 120, 4, 0.5);
       Missions.onCollect(this.kind, this.missionId);
-    }
-  }
-  draw(ctx) {
-    const x = this.x, y = this.y, b = Math.sin(this.anim * 3) * 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, y + 4, 10, 4, 0, 0, 7); ctx.fill();
-    ctx.globalAlpha = 0.35 + 0.2 * Math.sin(this.anim * 4); ctx.fillStyle = '#ffe14f'; ctx.beginPath(); ctx.arc(x, y - 6, 18, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
-    if (this.kind === 'llama') {
-      ctx.save(); ctx.translate(x, y); if (Math.cos(this.facing) < 0) ctx.scale(-1, 1);
-      ctx.fillStyle = '#f4ecd8';
-      ctx.fillRect(-9, -2, 3, 7); ctx.fillRect(5, -2, 3, 7);
-      roundRect(ctx, -11, -12, 20, 11, 5); ctx.fill();
-      ctx.fillRect(4, -24, 6, 14);
-      roundRect(ctx, 3, -28, 11, 7, 3); ctx.fill();
-      ctx.fillStyle = '#c9b89a'; ctx.fillRect(4, -32, 2, 5); ctx.fillRect(8, -32, 2, 5);
-      ctx.fillStyle = '#222'; ctx.fillRect(10, -26, 2, 2);
-      ctx.restore();
-    } else if (this.kind === 'duck') {
-      ctx.fillStyle = '#ffe14f'; ctx.beginPath(); ctx.ellipse(x, y - 4 + b, 9, 6, 0, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(x + 6, y - 11 + b, 5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ff8a2a'; ctx.beginPath(); ctx.moveTo(x + 10, y - 12 + b); ctx.lineTo(x + 15, y - 10 + b); ctx.lineTo(x + 10, y - 9 + b); ctx.fill();
-      ctx.fillStyle = '#222'; ctx.fillRect(x + 7, y - 13 + b, 2, 2);
-    } else if (this.kind === 'figure') {
-      ctx.fillStyle = '#3a6fd1'; roundRect(ctx, x - 6, y - 22 + b, 12, 20, 3); ctx.fill();
-      ctx.fillStyle = '#e2312f'; ctx.fillRect(x - 8, y - 18 + b, 16, 4);
-      ctx.fillStyle = '#ffe14f'; ctx.beginPath(); ctx.arc(x, y - 26 + b, 5, 0, 7); ctx.fill();
-    } else if (this.kind === 'flurp') {
-      ctx.fillStyle = '#9b4fd8'; roundRect(ctx, x - 5, y - 20 + b, 10, 18, 3); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.fillRect(x - 5, y - 14 + b, 10, 4);
-    } else if (this.kind === 'part') {
-      ctx.strokeStyle = '#3fe0ff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y - 10 + b, 7, 0, 7); ctx.stroke();
-      ctx.fillStyle = '#9aa6bc'; ctx.fillRect(x - 3, y - 13 + b, 6, 6);
     }
   }
 }
@@ -767,7 +638,7 @@ class Enemy extends Entity {
     if (this.cd <= 0) {
       this.cd = enraged ? 2.0 : 2.8;
       for (let k = -1; k <= 1; k++) {
-        const p = new Projectile({ x: this.x, y: this.y - 30, vx: Math.cos(a + k * 0.5) * 210, vy: Math.sin(a + k * 0.5) * 210, team: 'enemy', dmg: 14, color: '#ff8a2a', life: 3.2, r: 6, kind: 'missile', splash: 50, homing: 2.2, target, fly: true });
+        const p = new Projectile({ x: this.x, y: this.y, h: 1.9, vx: Math.cos(a + k * 0.5) * 210, vy: Math.sin(a + k * 0.5) * 210, team: 'enemy', dmg: 14, color: '#ff8a2a', life: 3.2, r: 6, kind: 'missile', splash: 50, homing: 2.2, target, fly: true });
         m.projectiles.push(p);
       }
       Sfx.play('missile');
@@ -780,7 +651,8 @@ class Enemy extends Entity {
   }
   shoot(m, a, speed, dmg, color, r = 4) {
     const team = this.teamNow();
-    m.projectiles.push(new Projectile({ x: this.x + Math.cos(a) * this.r, y: this.y - 8 + Math.sin(a) * this.r, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, team, dmg, color: team === 'player' ? '#c36bff' : color, life: 2.2, r }));
+    const h = this.type === 'goobot' ? 3 : this.def.fly ? 2 : this.type === 'megabot' ? 1.6 : 0.75;
+    m.projectiles.push(new Projectile({ x: this.x + Math.cos(a) * this.r, y: this.y + Math.sin(a) * this.r, h, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, team, dmg, color: team === 'player' ? '#c36bff' : color, life: 2.2, r }));
     if (dist(this, G.player) < 600) Sfx.play('enemyShot');
   }
   moveToward(dt, m, a, speed) {
@@ -817,129 +689,6 @@ class Enemy extends Entity {
     if (Math.random() < 0.06) m.pickups.push(makePickup('energy', this.x + rand(-10, 10), this.y + rand(-10, 10), 40));
     G.stats.kills++;
     Missions.onKill(this.type, this);
-  }
-  draw(ctx) {
-    const sc = this.sizeScale();
-    const x = this.x, y = this.y;
-    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
-    drawEnemyBody(ctx, this);
-    ctx.restore();
-    if (this.flash > 0) { ctx.globalAlpha = 0.55; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y - this.r * sc * 0.6, this.r * sc + 2, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
-    if (this.frozen > 0) {
-      ctx.fillStyle = 'rgba(160,230,255,0.55)'; ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 2;
-      const r = this.r * sc + 4; roundRect(ctx, x - r, y - r * 1.6, r * 2, r * 1.9, 4); ctx.fill(); ctx.stroke();
-    }
-    if (this.hypno > 0) {
-      ctx.strokeStyle = '#c36bff'; ctx.lineWidth = 2;
-      ctx.beginPath(); for (let a = 0; a < 12; a += 0.3) { const rr = a * 0.9; const px = x + Math.cos(a + G.time * 6) * rr, py = y - this.r * sc * 2 - 10 + Math.sin(a + G.time * 6) * rr * 0.5; a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); } ctx.stroke();
-    }
-    if (this.hp < this.maxHp && !this.boss && this.type !== 'nanobot') {
-      const w = Math.max(20, this.r * 2), top = y - this.r * sc * 2 - 12;
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x - w / 2, top, w, 4);
-      ctx.fillStyle = this.hypno > 0 ? '#c36bff' : '#ff4f5a'; ctx.fillRect(x - w / 2, top, w * clamp(this.hp / this.maxHp, 0, 1), 4);
-    }
-  }
-}
-
-function drawEnemyBody(ctx, e) {
-  const t = e.anim, r = e.r;
-  const hovering = e.def.fly;
-  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, hovering ? 10 : 2, r, r * 0.4, 0, 0, 7); ctx.fill();
-  const lookX = Math.cos(e.facing) * 2.5, lookY = Math.sin(e.facing) * 1.5;
-  switch (e.type) {
-    case 'twonky': {
-      const b = Math.abs(Math.sin(t * 8)) * 4;
-      ctx.translate(0, -b);
-      ctx.fillStyle = '#c97a2a';
-      for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; ctx.beginPath(); ctx.arc(Math.cos(a) * 9, -10 + Math.sin(a) * 9, 4, 0, 7); ctx.fill(); }
-      ctx.fillStyle = '#f2a33a'; ctx.beginPath(); ctx.arc(0, -10, 10, 0, 7); ctx.fill();
-      ctx.fillStyle = '#f2a33a'; ctx.beginPath(); ctx.moveTo(-9, -16); ctx.lineTo(-12, -26); ctx.lineTo(-4, -19); ctx.fill(); ctx.beginPath(); ctx.moveTo(9, -16); ctx.lineTo(12, -26); ctx.lineTo(4, -19); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4 + lookX, -11 + lookY, 4.5, 0, 7); ctx.arc(4 + lookX, -11 + lookY, 4.5, 0, 7); ctx.fill();
-      const angry = e.hypno <= 0 && e.cd < 0.3;
-      ctx.fillStyle = angry ? '#c00' : '#222'; ctx.beginPath(); ctx.arc(-4 + lookX * 1.4, -11 + lookY, 2.4, 0, 7); ctx.arc(4 + lookX * 1.4, -11 + lookY, 2.4, 0, 7); ctx.fill();
-      ctx.fillStyle = '#8a3a1a'; ctx.fillRect(-2, -5, 4, 2);
-      break;
-    }
-    case 'yokian': {
-      const b = Math.sin(t * 4) * 2;
-      ctx.fillStyle = '#7d8696'; ctx.beginPath(); ctx.ellipse(0, -4 + b, 13, 5, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#3fe0ff'; ctx.fillRect(-8, -2 + b, 3, 2); ctx.fillRect(5, -2 + b, 3, 2);
-      ctx.fillStyle = '#8fe86a'; ctx.beginPath(); ctx.ellipse(0, -16 + b, 9, 12, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#5ab83f'; ctx.beginPath(); ctx.ellipse(-3, -20 + b, 3, 5, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-3 + lookX, -18 + b, 3, 0, 7); ctx.arc(3 + lookX, -18 + b, 3, 0, 7); ctx.fill();
-      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(-3 + lookX * 1.3, -18 + b, 1.5, 0, 7); ctx.arc(3 + lookX * 1.3, -18 + b, 1.5, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#2a5a1f'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, -12 + b, 3, 0.2, Math.PI - 0.2); ctx.stroke();
-      break;
-    }
-    case 'saucer': {
-      const b = Math.sin(t * 3) * 3;
-      ctx.fillStyle = '#5a6a5a'; ctx.beginPath(); ctx.ellipse(0, -14 + b, 26, 9, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#9be37a'; ctx.beginPath(); ctx.ellipse(0, -16 + b, 24, 7, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(200,255,220,0.8)'; ctx.beginPath(); ctx.ellipse(0, -20 + b, 11, 10, 0, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#8fe86a'; ctx.beginPath(); ctx.ellipse(0, -24 + b, 5, 6, 0, 0, 7); ctx.fill();
-      for (let k = 0; k < 6; k++) { const a = t * 3 + (k / 6) * Math.PI * 2; ctx.fillStyle = Math.sin(a * 2) > 0 ? '#ffe14f' : '#ff4040'; ctx.beginPath(); ctx.arc(Math.cos(a) * 20, -14 + b + Math.sin(a) * 5, 2.2, 0, 7); ctx.fill(); }
-      break;
-    }
-    case 'robot': {
-      const b = Math.abs(Math.sin(t * 6)) * 1.5;
-      ctx.fillStyle = '#3a3a48'; ctx.fillRect(-12, -6, 7, 8); ctx.fillRect(5, -6, 7, 8);
-      ctx.fillStyle = e.charging > 0 ? '#c05a5a' : '#8a8fa0'; roundRect(ctx, -13, -28 - b, 26, 23, 4); ctx.fill();
-      ctx.fillStyle = '#5a4a6a'; ctx.fillRect(-13, -14 - b, 26, 3);
-      ctx.fillStyle = '#2a2a38'; roundRect(ctx, -8, -25 - b, 16, 8, 3); ctx.fill();
-      ctx.fillStyle = '#ff3030'; ctx.beginPath(); ctx.arc(lookX * 1.5, -21 - b, 3, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#8a8fa0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -28 - b); ctx.lineTo(0, -34 - b); ctx.stroke();
-      ctx.fillStyle = '#ffb23f'; ctx.beginPath(); ctx.arc(0, -35 - b, 2.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#8a8fa0'; ctx.fillRect(-17, -22 - b, 4, 12); ctx.fillRect(13, -22 - b, 4, 12);
-      break;
-    }
-    case 'nanobot': {
-      ctx.strokeStyle = '#9aa6bc'; ctx.lineWidth = 1;
-      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-5, -3 + k * 2); ctx.lineTo(5, -5 + k * 3 + Math.sin(t * 30 + k) * 1.5); ctx.stroke(); }
-      ctx.fillStyle = '#c8d0dc'; ctx.beginPath(); ctx.arc(0, -4, 4.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ff3030'; ctx.beginPath(); ctx.arc(0, -4, 1.8, 0, 7); ctx.fill();
-      break;
-    }
-    case 'dummy': {
-      ctx.fillStyle = '#6b4a2a'; ctx.fillRect(-2, -12, 4, 14);
-      ctx.fillStyle = '#d9b77a'; roundRect(ctx, -11, -34, 22, 24, 8); ctx.fill();
-      ctx.strokeStyle = '#e2312f'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(0, -22, 7, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -22, 2.5, 0, 7); ctx.stroke();
-      break;
-    }
-    case 'goobot': {
-      const b = Math.sin(t * 2) * 4;
-      ctx.fillStyle = '#4a5a4a'; ctx.beginPath(); ctx.ellipse(0, -20 + b, 46, 16, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#9be37a'; ctx.beginPath(); ctx.ellipse(0, -24 + b, 44, 13, 0, 0, 7); ctx.fill();
-      for (let k = 0; k < 10; k++) { const a = t * 2 + (k / 10) * Math.PI * 2; ctx.fillStyle = Math.sin(a * 3) > 0 ? '#ffe14f' : '#ff4040'; ctx.beginPath(); ctx.arc(Math.cos(a) * 38, -22 + b + Math.sin(a) * 9, 3, 0, 7); ctx.fill(); }
-      ctx.fillStyle = 'rgba(200,255,220,0.6)'; ctx.beginPath(); ctx.ellipse(0, -32 + b, 22, 22, 0, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#8fe86a'; ctx.beginPath(); ctx.ellipse(0, -44 + b, 12, 15, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ffd34a'; ctx.beginPath(); ctx.moveTo(-10, -56 + b); ctx.lineTo(-10, -66 + b); ctx.lineTo(-5, -60 + b); ctx.lineTo(0, -68 + b); ctx.lineTo(5, -60 + b); ctx.lineTo(10, -66 + b); ctx.lineTo(10, -56 + b); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4 + lookX, -46 + b, 3.5, 0, 7); ctx.arc(4 + lookX, -46 + b, 3.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(-4 + lookX * 1.3, -46 + b, 1.7, 0, 7); ctx.arc(4 + lookX * 1.3, -46 + b, 1.7, 0, 7); ctx.fill();
-      break;
-    }
-    case 'megabot': {
-      const b = Math.abs(Math.sin(t * 4)) * 2;
-      ctx.fillStyle = '#2a2a38'; ctx.fillRect(-26, -12, 16, 14); ctx.fillRect(10, -12, 16, 14);
-      ctx.fillStyle = e.charging > 0 ? '#9a3a5a' : '#6a4a8a'; roundRect(ctx, -30, -62 - b, 60, 52, 8); ctx.fill();
-      ctx.fillStyle = '#4a3a6a'; ctx.fillRect(-30, -30 - b, 60, 6);
-      ctx.fillStyle = '#1a1a28'; roundRect(ctx, -18, -56 - b, 36, 22, 4); ctx.fill();
-      ctx.fillStyle = '#f6c89f'; ctx.beginPath(); ctx.arc(0, -45 - b, 8, 0, 7); ctx.fill();
-      ctx.fillStyle = '#3a3a3a'; ctx.fillRect(-8, -53 - b, 16, 3);
-      ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-3, -45 - b, 2.5, 0, 7); ctx.moveTo(5.5, -45 - b); ctx.arc(3, -45 - b, 2.5, 0, 7); ctx.stroke();
-      ctx.fillStyle = '#6a4a8a'; ctx.fillRect(-40, -56 - b, 10, 30); ctx.fillRect(30, -56 - b, 10, 30);
-      ctx.fillStyle = '#ff8a2a'; ctx.beginPath(); ctx.arc(-35, -24 - b, 5, 0, 7); ctx.arc(35, -24 - b, 5, 0, 7); ctx.fill();
-      break;
-    }
-    case 'ultrabot': {
-      const b = Math.abs(Math.sin(t * 6)) * 2;
-      ctx.fillStyle = '#2a2a38'; ctx.fillRect(-16, -8, 10, 10); ctx.fillRect(6, -8, 10, 10);
-      ctx.fillStyle = e.charging > 0 ? '#c05a5a' : '#7a3a3a'; roundRect(ctx, -18, -40 - b, 36, 33, 6); ctx.fill();
-      ctx.fillStyle = '#e0c050'; ctx.fillRect(-18, -40 - b, 36, 7);
-      ctx.fillStyle = '#ff3030'; ctx.fillRect(-10, -30 - b, 6, 4); ctx.fillRect(4, -30 - b, 6, 4);
-      ctx.fillStyle = '#7a3a3a'; ctx.fillRect(-26, -34 - b, 8, 20); ctx.fillRect(18, -34 - b, 8, 20);
-      break;
-    }
   }
 }
 
@@ -1012,12 +761,12 @@ class Vehicle extends Entity {
       this.fireCd = 0.35;
       for (const side of [-1, 1]) {
         const ox = Math.cos(this.angle + Math.PI / 2) * 12 * side, oy = Math.sin(this.angle + Math.PI / 2) * 12 * side;
-        m.projectiles.push(new Projectile({ x: this.x + ox, y: this.y + oy - this.alt, vx: Math.cos(aim) * 700, vy: Math.sin(aim) * 700, team: 'player', dmg: 26 * powerMult(), color: '#ffb23f', life: 0.9, r: 5, kind: 'missile', splash: 55, fly: true }));
+        m.projectiles.push(new Projectile({ x: this.x + ox, y: this.y + oy, h: this.alt * 0.095 + 0.5, vx: Math.cos(aim) * 700, vy: Math.sin(aim) * 700, team: 'player', dmg: 26 * powerMult(), color: '#ffb23f', life: 0.9, r: 5, kind: 'missile', splash: 55, fly: true }));
       }
       Sfx.play('missile');
     } else if (this.kind === 'goddardbike') {
       this.fireCd = 0.16;
-      m.projectiles.push(new Projectile({ x: this.x, y: this.y - 8, vx: Math.cos(aim) * 720, vy: Math.sin(aim) * 720, team: 'player', dmg: 11 * powerMult(), color: '#ff4040', life: 0.7, r: 3 }));
+      m.projectiles.push(new Projectile({ x: this.x, y: this.y, h: 0.7, vx: Math.cos(aim) * 720, vy: Math.sin(aim) * 720, team: 'player', dmg: 11 * powerMult(), color: '#ff4040', life: 0.7, r: 3 }));
       Sfx.play('blaster');
     } else {
       this.fireCd = 1.2;
@@ -1039,43 +788,6 @@ class Vehicle extends Entity {
     }
     if (this.kind === 'goddardbike') { G.goddard.isBike = false; G.goddard.x = this.x; G.goddard.y = this.y; G.goddard.die(); }
     G.toast(`${this.def.name} destroyed! Summon a new one from the Vehicle Bay in the lab.`);
-  }
-  draw(ctx) {
-    const x = this.x, y = this.y - this.alt;
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x + this.alt * 0.4, this.y + 4, this.r + 6, this.r * 0.6, this.angle, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(x, y); ctx.rotate(this.angle);
-    if (this.kind === 'hovercar') {
-      ctx.fillStyle = 'rgba(63,224,255,0.4)'; ctx.beginPath(); ctx.ellipse(0, 0, 26, 15, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#3fa7ff'; roundRect(ctx, -22, -12, 44, 24, 10); ctx.fill();
-      ctx.fillStyle = '#2a7ad1'; roundRect(ctx, -22, -12, 12, 24, 6); ctx.fill();
-      ctx.fillStyle = 'rgba(200,240,255,0.85)'; roundRect(ctx, -4, -9, 16, 18, 6); ctx.fill();
-      ctx.fillStyle = '#e8eef8'; ctx.fillRect(16, -10, 5, 4); ctx.fillRect(16, 6, 5, 4);
-      ctx.fillStyle = '#ff4040'; ctx.fillRect(-23, -10, 3, 4); ctx.fillRect(-23, 6, 3, 4);
-    } else if (this.kind === 'rocket') {
-      if (this.driver && Math.abs(this.spd) > 20) { ctx.fillStyle = Math.random() < 0.5 ? '#ffb23f' : '#ff5a2a'; ctx.beginPath(); ctx.moveTo(-20, -6); ctx.lineTo(-34 - rand(0, 14), 0); ctx.lineTo(-20, 6); ctx.fill(); }
-      ctx.fillStyle = '#c0453a'; ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(-26, -18); ctx.lineTo(-8, -8); ctx.fill(); ctx.beginPath(); ctx.moveTo(-18, 8); ctx.lineTo(-26, 18); ctx.lineTo(-8, 8); ctx.fill();
-      ctx.fillStyle = '#e8eef8'; ctx.beginPath(); ctx.moveTo(-20, -9); ctx.lineTo(10, -9); ctx.quadraticCurveTo(28, 0, 10, 9); ctx.lineTo(-20, 9); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#e2312f'; ctx.beginPath(); ctx.moveTo(12, -8); ctx.quadraticCurveTo(28, 0, 12, 8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#3fe0ff'; ctx.beginPath(); ctx.arc(2, 0, 4.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#e2312f'; ctx.fillRect(-14, -9, 4, 18);
-    } else {
-      ctx.fillStyle = '#2a2a38'; ctx.beginPath(); ctx.arc(-13, 0, 6, 0, 7); ctx.arc(13, 0, 6, 0, 7); ctx.fill();
-      ctx.fillStyle = '#b8c0cc'; roundRect(ctx, -14, -6, 28, 12, 5); ctx.fill();
-      ctx.fillStyle = '#e2312f'; ctx.fillRect(-4, -6, 3, 12);
-      ctx.fillStyle = '#c8d0dc'; roundRect(ctx, 10, -5, 9, 10, 3); ctx.fill();
-      ctx.fillStyle = '#3fe0ff'; ctx.beginPath(); ctx.arc(16, 0, 2, 0, 7); ctx.fill();
-      ctx.fillStyle = '#9aa6bc'; ctx.beginPath(); ctx.moveTo(12, -5); ctx.lineTo(9, -11); ctx.lineTo(15, -5); ctx.fill(); ctx.beginPath(); ctx.moveTo(12, 5); ctx.lineTo(9, 11); ctx.lineTo(15, 5); ctx.fill();
-    }
-    if (this.driver) {
-      ctx.rotate(-this.angle);
-      drawPerson(ctx, 0, this.kind === 'goddardbike' ? 2 : 6, LOOKS.jimmy, this.angle, 0, { scale: this.kind === 'rocket' ? 0.55 : 0.7 });
-    }
-    ctx.restore();
-    if (this.flash > 0) { ctx.globalAlpha = 0.5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, this.r + 4, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
-    if (!this.driver && dist(this, G.player) < 160 && !G.player.vehicle) {
-      ctx.font = 'bold 11px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.strokeText(this.def.name, x, y - this.r - 14); ctx.fillStyle = '#7ff0ff'; ctx.fillText(this.def.name, x, y - this.r - 14);
-    }
   }
 }
 
@@ -1131,7 +843,7 @@ class Projectile {
     const victims = this.team === 'player' ? enemyTargets(m) : playerTeamTargets(m);
     for (const e of victims) {
       const er = e.r * (e.sizeScale ? e.sizeScale() : 1);
-      if (distXY(this.x, this.y, e.x, e.y - er * 0.6) < this.r + er + 2) { this.hit(m, e); return; }
+      if (distXY(this.x, this.y, e.x, e.y) < this.r + er + 2) { this.hit(m, e); return; }
     }
   }
   hit(m, e) {
@@ -1154,29 +866,6 @@ class Projectile {
   detonate(m) {
     this.dead = true;
     explosion(m, this.x, this.y, this.splash || 60, this.dmg, this.team, { color: this.kind === 'grenade' ? '#ff6fd0' : '#ffb23f', slow: this.kind === 'grenade' ? 3 : 0 });
-  }
-  draw(ctx) {
-    if (this.kind === 'grenade') {
-      const t = 1 - this.life / this.max;
-      const h = Math.sin(t * Math.PI) * 40;
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 4, 6, 3, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ff6fd0'; ctx.beginPath(); ctx.arc(this.x, this.y - h, 7, 0, 7); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x - 2, this.y - h - 2, 2, 0, 7); ctx.fill();
-      return;
-    }
-    const a = Math.atan2(this.vy, this.vx);
-    if (this.kind === 'missile') {
-      ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(a);
-      ctx.fillStyle = '#e8eef8'; ctx.fillRect(-7, -2.5, 12, 5); ctx.fillStyle = this.color; ctx.fillRect(4, -2.5, 4, 5);
-      ctx.restore(); return;
-    }
-    ctx.strokeStyle = this.color; ctx.lineWidth = this.r * 1.4; ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.35; ctx.lineWidth = this.r * 3;
-    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x - Math.cos(a) * 14, this.y - Math.sin(a) * 14); ctx.stroke();
-    ctx.globalAlpha = 1; ctx.lineWidth = this.r * 1.2;
-    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x - Math.cos(a) * 10, this.y - Math.sin(a) * 10); ctx.stroke();
-    ctx.lineCap = 'butt';
-    if (this.effect === 'hypno') { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(this.x, this.y, 6 + Math.sin(G.time * 30) * 2, 0, 7); ctx.stroke(); }
   }
 }
 
@@ -1203,20 +892,4 @@ function updatePickups(m, dt) {
     if (k.t > 40) k.dead = true;
   }
   m.pickups = m.pickups.filter((k) => !k.dead);
-}
-function drawPickups(ctx, m) {
-  for (const k of m.pickups) {
-    const b = Math.sin(k.t * 6) * 2;
-    if (k.kind === 'neutronium') {
-      ctx.fillStyle = 'rgba(122,255,106,0.3)'; ctx.beginPath(); ctx.arc(k.x, k.y + b, 7, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#7aff6a'; ctx.lineWidth = 1.2;
-      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(k.x, k.y + b, 6, 2.2, i * 1.05 + k.t * 2, 0, 7); ctx.stroke(); }
-      ctx.fillStyle = '#eaffdf'; ctx.beginPath(); ctx.arc(k.x, k.y + b, 1.8, 0, 7); ctx.fill();
-    } else if (k.kind === 'health') {
-      ctx.fillStyle = '#9b4fd8'; roundRect(ctx, k.x - 5, k.y - 9 + b, 10, 16, 3); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.fillRect(k.x - 5, k.y - 3 + b, 10, 3);
-    } else {
-      ctx.fillStyle = '#3fe0ff'; ctx.beginPath(); ctx.moveTo(k.x + 2, k.y - 9 + b); ctx.lineTo(k.x - 5, k.y + 1 + b); ctx.lineTo(k.x, k.y + 1 + b); ctx.lineTo(k.x - 2, k.y + 9 + b); ctx.lineTo(k.x + 5, k.y - 1 + b); ctx.lineTo(k.x, k.y - 1 + b); ctx.fill();
-    }
-  }
 }

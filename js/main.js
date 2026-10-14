@@ -5,7 +5,7 @@
 
 const G = {
   maps: {}, map: null, player: null, goddard: null,
-  cam: { x: 0, y: 0 }, time: 0, dayTime: 0.1,
+  time: 0, dayTime: 0.1,
   neutronium: 0, upgrades: {}, stats: { kills: 0 },
   shake: 0, hurtFlash: 0, zoneName: '', zoneT: 0,
   currentInteract: null, started: false, spawnT: 8, saveT: 30, godMode: false,
@@ -51,8 +51,19 @@ const Input = {
   clearMouse() { this.mouseDown = false; this.firePressed = false; },
 };
 G.input = Input;
+// Movement keys -> world-space direction. In chase view it's relative to the camera.
+function moveVector() {
+  let ix = (Input.right ? 1 : 0) - (Input.left ? 1 : 0), iy = (Input.down ? 1 : 0) - (Input.up ? 1 : 0);
+  if (R3.cam.mode === 'chase' && (ix || iy)) {
+    const yaw = R3.cam.yaw, f = -iy, sd = ix;
+    return { mx: Math.cos(yaw) * f + Math.cos(yaw + Math.PI / 2) * sd, my: Math.sin(yaw) * f + Math.sin(yaw + Math.PI / 2) * sd };
+  }
+  return { mx: ix, my: iy };
+}
 function inputSnapshot() {
-  return { up: Input.up, down: Input.down, left: Input.left, right: Input.right, sprint: Input.sprint, fire: Input.fire, aim: Input.aim, worldMouse: Input.worldMouse };
+  const mv = moveVector();
+  Input.mx = mv.mx; Input.my = mv.my;
+  return { up: Input.up, down: Input.down, left: Input.left, right: Input.right, mx: mv.mx, my: mv.my, sprint: Input.sprint, fire: Input.fire, aim: Input.aim, worldMouse: Input.worldMouse };
 }
 
 function onKeyDown(e) {
@@ -75,6 +86,8 @@ function onKeyDown(e) {
     case 'm': UI.bigMap(); break;
     case 'escape': case 'p': case 'h': UI.pause(); break;
     case 'n': G.toast(Sfx.toggle() ? 'Sound muted' : 'Sound on'); break;
+    case 'c': toggleCamera(); break;
+    case 'z': R3.cam.zoom = (R3.cam.zoom + 1) % 3; break;
   }
 }
 
@@ -82,8 +95,21 @@ function setupInput(canvas) {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', (e) => Input.keys.delete(e.key.toLowerCase()));
   window.addEventListener('blur', () => { Input.keys.clear(); Input.clearMouse(); });
-  canvas.addEventListener('mousemove', (e) => { Input.mouse.x = e.clientX; Input.mouse.y = e.clientY; });
-  canvas.addEventListener('mousedown', (e) => { if (e.button === 0 && G.started && !UI.isOpen()) { Input.mouseDown = true; Input.firePressed = true; Sfx.init(); } });
+  canvas.addEventListener('mousemove', (e) => {
+    Input.mouse.x = e.clientX; Input.mouse.y = e.clientY;
+    if (R3.cam.mode === 'chase' && G.started && !UI.isOpen() && (document.pointerLockElement === canvas || e.buttons & 2)) {
+      R3.cam.yaw += e.movementX * 0.0032;
+      R3.cam.pitch = clamp(R3.cam.pitch + e.movementY * 0.0025, 0.08, 1.15);
+      R3.cam.lastMouse = G.time;
+    }
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    if (!G.started || UI.isOpen()) return;
+    Sfx.init();
+    if (R3.cam.mode === 'chase' && document.pointerLockElement !== canvas) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* pointer lock unavailable */ } }
+    if (e.button === 0) { Input.mouseDown = true; Input.firePressed = true; }
+  });
+  document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && R3.cam.mode === 'chase' && G.started && !UI.isOpen()) UI.pause(); });
   window.addEventListener('mouseup', (e) => { if (e.button === 0) Input.mouseDown = false; });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('wheel', (e) => {
@@ -109,6 +135,7 @@ function setupWorld() {
   G.map = town;
   G.goddard = new Goddard(G.player.x - 30, G.player.y + 10);
   G.minimapImg = buildMinimap(town);
+  R3.buildWorld(town, lab);
   // Some trouble already brewing around town.
   for (let i = 0; i < 10; i++) spawnEncounter(true);
 }
@@ -117,6 +144,7 @@ function startGame(continueSave) {
   Sfx.init();
   document.getElementById('title').hidden = true;
   G.started = true;
+  R3.update(0, true);
   const save = continueSave ? Store.load() : null;
   if (save) {
     G.neutronium = save.neutronium || 0;
@@ -151,7 +179,7 @@ G.changeMap = function (name, pos) {
   p.x = pos.x; p.y = pos.y; p.kx = p.ky = 0; p.dash = null;
   G.goddard.x = p.x - 24; G.goddard.y = p.y + 8;
   if (G.goddard.mode === 'stay') G.goddard.mode = 'follow';
-  snapCamera();
+  R3.update(0, true);
   Missions.onMapChange(name);
   G.zoneName = ''; // force zone banner
 };
@@ -308,30 +336,28 @@ function updateEncounters(dt) {
 // Loop
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const dark = document.createElement('canvas');
-const dctx = dark.getContext('2d');
+const hud = document.getElementById('hud');
+const hctx = hud.getContext('2d');
 
 function resize() {
   G.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   G.W = window.innerWidth; G.H = window.innerHeight;
-  canvas.width = Math.floor(G.W * G.dpr); canvas.height = Math.floor(G.H * G.dpr);
-  canvas.style.width = G.W + 'px'; canvas.style.height = G.H + 'px';
-  dark.width = Math.floor(G.W / 2); dark.height = Math.floor(G.H / 2);
+  R3.resize(G.W, G.H, G.dpr);
+  hud.width = Math.floor(G.W * G.dpr); hud.height = Math.floor(G.H * G.dpr);
+  hud.style.width = G.W + 'px'; hud.style.height = G.H + 'px';
 }
 
-function camTarget() {
-  const p = G.player, m = G.map;
-  let tx = p.x, ty = p.y;
-  if (p.vehicle) { tx += Math.cos(p.vehicle.angle) * p.vehicle.spd * 0.35; ty += Math.sin(p.vehicle.angle) * p.vehicle.spd * 0.35; }
-  else { tx += (Input.mouse.x - G.W / 2) * 0.15; ty += (Input.mouse.y - G.H / 2) * 0.15; }
-  let cx = tx - G.W / 2, cy = ty - G.H / 2;
-  const mw = m.w * TILE, mh = m.h * TILE;
-  cx = mw < G.W ? (mw - G.W) / 2 : clamp(cx, 0, mw - G.W);
-  cy = mh < G.H ? (mh - G.H) / 2 : clamp(cy, 0, mh - G.H);
-  return { x: cx, y: cy };
+function toggleCamera() {
+  const c = R3.cam;
+  c.mode = c.mode === 'iso' ? 'chase' : 'iso';
+  if (c.mode === 'chase') {
+    c.yaw = G.player.vehicle ? G.player.vehicle.angle : G.player.facing;
+    G.toast('Third-person view: move the mouse to look around (click to lock the cursor). Press C to switch back.');
+  } else {
+    if (document.pointerLockElement) document.exitPointerLock();
+    G.toast('Overhead view. Press C for third-person.');
+  }
 }
-function snapCamera() { const t = camTarget(); G.cam.x = t.x; G.cam.y = t.y; }
 
 function update(dt) {
   G.time += dt;
@@ -340,8 +366,13 @@ function update(dt) {
   G.hurtFlash = Math.max(0, G.hurtFlash - dt);
   const m = G.map, p = G.player;
 
-  Input.worldMouse = { x: Input.mouse.x + G.cam.x, y: Input.mouse.y + G.cam.y };
-  Input.aim = Math.atan2(Input.worldMouse.y - (p.y - 14 - (p.alt || 0)), Input.worldMouse.x - p.x);
+  if (R3.cam.mode === 'chase') {
+    Input.aim = R3.cam.yaw;
+    Input.worldMouse = { x: p.x + Math.cos(R3.cam.yaw) * 300, y: p.y + Math.sin(R3.cam.yaw) * 300 };
+  } else {
+    Input.worldMouse = R3.mouseWorld(Input.mouse.x, Input.mouse.y);
+    Input.aim = Math.atan2(Input.worldMouse.y - p.y, Input.worldMouse.x - p.x);
+  }
   const input = inputSnapshot();
   if (G.godMode) { p.energy = p.maxEnergy; p.hp = p.maxHp; }
 
@@ -375,47 +406,8 @@ function update(dt) {
   G.currentInteract = findInteract();
   Input.firePressed = false;
 
-  const t = camTarget();
-  const k = Math.min(1, dt * 6);
-  G.cam.x = lerp(G.cam.x, t.x, k); G.cam.y = lerp(G.cam.y, t.y, k);
-
   G.saveT -= dt;
   if (G.saveT <= 0) { G.saveT = 30; G.save(); }
-}
-
-function isAirborne(e) {
-  if (e === G.player) return e.jetpack;
-  if (e instanceof Vehicle) return e.kind === 'rocket' && e.alt > 6;
-  if (e === G.goddard) return false;
-  return e instanceof Enemy && e.def.fly;
-}
-
-function render() {
-  const m = G.map, W = G.W, H = G.H;
-  ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
-  ctx.fillStyle = m.name === 'lab' ? '#0b0e1c' : '#2f7a34';
-  ctx.fillRect(0, 0, W, H);
-  ctx.save();
-  const sx = G.shake ? rand(-G.shake, G.shake) : 0, sy = G.shake ? rand(-G.shake, G.shake) : 0;
-  ctx.translate(Math.round(-G.cam.x + sx), Math.round(-G.cam.y + sy));
-  const view = { x: G.cam.x, y: G.cam.y };
-  renderMap(ctx, m, view, W, H, G.time);
-  Missions.drawWorld(ctx);
-  drawPickups(ctx, m);
-
-  const all = m.entities.filter((e) => !e.dead && e.x > G.cam.x - 120 && e.x < G.cam.x + W + 120 && e.y > G.cam.y - 120 && e.y < G.cam.y + H + 160);
-  all.push(G.player); if (!G.goddard.isBike) all.push(G.goddard);
-  const ground = all.filter((e) => !isAirborne(e)).sort((a, b) => a.y - b.y);
-  const air = all.filter((e) => isAirborne(e)).sort((a, b) => a.y - b.y);
-  for (const e of ground) e.draw(ctx);
-  if (m.name === 'town') renderCanopies(ctx, m, view, W, H);
-  for (const e of air) e.draw(ctx);
-  for (const pr of m.projectiles) pr.draw(ctx);
-  drawEffects(ctx, m);
-  ctx.restore();
-
-  drawLighting(W, H);
-  drawHUD(ctx, W, H);
 }
 
 function nightAmount() {
@@ -427,49 +419,29 @@ function nightAmount() {
   return 1 - (h - 4) / 3;
 }
 
-function drawLighting(W, H) {
-  const n = G.map.name === 'lab' ? 0.35 : nightAmount() * 0.62;
-  if (n <= 0.01) return;
-  const s = 0.5;
-  dctx.globalCompositeOperation = 'source-over';
-  dctx.clearRect(0, 0, dark.width, dark.height);
-  dctx.fillStyle = G.map.name === 'lab' ? `rgba(5,8,25,${n})` : `rgba(10,14,48,${n})`;
-  dctx.fillRect(0, 0, dark.width, dark.height);
-  dctx.globalCompositeOperation = 'destination-out';
-  const hole = (wx, wy, r, a = 1) => {
-    const x = (wx - G.cam.x) * s, y = (wy - G.cam.y) * s, rr = r * s;
-    const g = dctx.createRadialGradient(x, y, 0, x, y, rr);
-    g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
-    dctx.fillStyle = g; dctx.fillRect(x - rr, y - rr, rr * 2, rr * 2);
-  };
-  const p = G.player;
-  hole(p.x, p.y, 240);
-  if (p.vehicle) hole(p.x + Math.cos(p.vehicle.angle) * 160, p.y + Math.sin(p.vehicle.angle) * 160, 170, 0.9);
-  for (const pr of G.map.projectiles) hole(pr.x, pr.y, 40, 0.6);
-  if (G.map.name === 'lab') for (const st of G.map.stations) hole((st.x + st.w / 2) * TILE, (st.y + st.h / 2) * TILE, 150, 0.8);
-  else for (const b of G.map.buildings) if (b.doorTile) { const d = tp(b.doorTile.x, b.doorTile.y); hole(d.x, d.y - 16, 90, 0.7); }
-  for (const e of G.map.effects) if (e.type === 'ring') hole(e.x, e.y, e.radius * 1.2, 0.8);
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(dark, 0, 0, W, H);
-}
-
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (G.started && !UI.isOpen()) update(dt);
-  else if (!G.started) { G.time += dt; G.player.facing = Math.PI / 2; const t = { x: G.player.x - G.W / 2 + Math.sin(G.time * 0.1) * 600, y: G.player.y - G.H / 2 }; G.cam.x = clamp(t.x, 0, G.maps.town.w * TILE - G.W); G.cam.y = clamp(t.y, 0, G.maps.town.h * TILE - G.H); }
-  render();
+  else if (!G.started) G.time += dt;
+  R3.update(dt);
+  if (G.shake > 0) { R3.camera.position.x += rand(-1, 1) * G.shake * 0.012; R3.camera.position.y += rand(-1, 1) * G.shake * 0.012; }
+  R3.render();
+  hctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
+  hctx.clearRect(0, 0, G.W, G.H);
+  if (G.started) { R3.drawOverlays(hctx); drawHUD(hctx, G.W, G.H); }
   requestAnimationFrame(frame);
 }
 
 function boot() {
+  UI.init();
+  R3.init(canvas);
   resize();
   window.addEventListener('resize', resize);
-  UI.init();
   setupWorld();
   setupInput(canvas);
-  snapCamera();
+  R3.update(0, true);
   const hasSave = !!Store.load();
   const cont = document.getElementById('btn-continue');
   cont.hidden = !hasSave;

@@ -171,6 +171,7 @@ const UI = {
       <div><kbd>Shift</kbd> Sprint / vehicle boost</div><div><kbd>E</kbd> Talk · enter · use · get in/out</div>
       <div><kbd>G</kbd> Goddard: follow / attack / stay</div><div><kbd>V</kbd> Ride the Goddard Bike</div>
       <div><kbd>Q</kbd> Mission log</div><div><kbd>M</kbd> Town map</div>
+      <div><kbd>C</kbd> Overhead / third-person camera</div><div><kbd>Z</kbd> Zoom (overhead view)</div>
       <div><kbd>Esc</kbd> Pause</div><div><kbd>N</kbd> Mute sound</div>
     </div>`;
   },
@@ -327,8 +328,10 @@ function drawHUD(ctx, W, H) {
   if (mk) {
     const sameMap = mk.map === G.map.name;
     const target = sameMap ? mk : G.map.name === 'lab' ? G.maps.lab.exit : { ...tp(45, 31) };
-    const sx = target.x - G.cam.x, sy = target.y - G.cam.y;
-    if (sx < 20 || sy < 20 || sx > W - 20 || sy > H - 20) {
+    const sp = R3.worldToScreen(target.x, target.y, 2.2);
+    let sx = sp.x, sy = sp.y;
+    if (sp.behind) { sx = W - sx; sy = H + 400; }
+    if (sp.behind || sx < 20 || sy < 20 || sx > W - 20 || sy > H - 20) {
       const a = Math.atan2(sy - H / 2, sx - W / 2);
       const ax = clamp(W / 2 + Math.cos(a) * (W / 2 - 50), 40, W - 40), ay = clamp(H / 2 + Math.sin(a) * (H / 2 - 50), 120, H - 100);
       ctx.save(); ctx.translate(ax, ay); ctx.rotate(a);
@@ -340,7 +343,7 @@ function drawHUD(ctx, W, H) {
     } else {
       const b = Math.sin(G.time * 5) * 4;
       ctx.fillStyle = '#7aff6a'; ctx.strokeStyle = '#1d2140'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(sx, sy - 38 + b); ctx.lineTo(sx - 9, sy - 54 + b); ctx.lineTo(sx + 9, sy - 54 + b); ctx.closePath(); ctx.stroke(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(sx, sy + b); ctx.lineTo(sx - 10, sy - 18 + b); ctx.lineTo(sx + 10, sy - 18 + b); ctx.closePath(); ctx.stroke(); ctx.fill();
     }
   }
 
@@ -372,7 +375,8 @@ function drawHUD(ctx, W, H) {
 
   // crosshair
   if (!UI.isOpen()) {
-    const { x, y } = G.input.mouse;
+    const chase = R3.cam.mode === 'chase';
+    const { x, y } = chase ? { x: W / 2, y: H * 0.42 } : G.input.mouse;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.moveTo(x - 14, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 14); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 14); ctx.stroke();
     ctx.fillStyle = INVENTIONS[p.invIndex].color; ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill();

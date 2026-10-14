@@ -290,22 +290,6 @@ const Missions = {
     return s.text;
   },
 
-  drawWorld(ctx) {
-    const s = this.step(); if (!s || G.map.name !== 'town') return;
-    if (s.type === 'race') {
-      s.checkpoints.forEach((c, i) => {
-        if (i < this.active.cp) return;
-        const cur = i === this.active.cp;
-        ctx.strokeStyle = cur ? '#ffe14f' : 'rgba(255,225,79,0.3)'; ctx.lineWidth = cur ? 6 : 3;
-        ctx.beginPath(); ctx.arc(c.x, c.y, 60 + (cur ? Math.sin(G.time * 6) * 6 : 0), 0, 7); ctx.stroke();
-        if (cur) { ctx.font = 'bold 16px Bungee, sans-serif'; ctx.fillStyle = '#ffe14f'; ctx.textAlign = 'center'; ctx.fillText(String(i + 1), c.x, c.y + 6); }
-      });
-    }
-    if (s.type === 'goto') {
-      ctx.strokeStyle = '#7aff6a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.8 + Math.sin(G.time * 5) * 4, 0, 7); ctx.stroke();
-    }
-  },
-
   serialize() { return [...this.completed]; },
   restore(list) { this.completed = new Set(list || []); },
 };

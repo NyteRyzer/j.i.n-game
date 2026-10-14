@@ -40,8 +40,7 @@ const INVENTIONS = [
     id: 'burp', name: 'Burping Soda', key: '5', cost: 20, cd: 1.2, color: '#b8ff8a',
     desc: 'A swig of soda launches you forward on a mighty burp, blasting enemies away.',
     use(p, a, m, input) {
-      let dx = 0, dy = 0;
-      if (input.left) dx -= 1; if (input.right) dx += 1; if (input.up) dy -= 1; if (input.down) dy += 1;
+      const dx = input.mx || 0, dy = input.my || 0;
       const da = dx || dy ? Math.atan2(dy, dx) : a;
       p.dash = { vx: Math.cos(da) * 900, vy: Math.sin(da) * 900, t: 0.28 };
       Sfx.play('burp');
@@ -70,7 +69,7 @@ const INVENTIONS = [
       const target = input.worldMouse;
       const d = Math.min(340, distXY(p.x, p.y, target.x, target.y));
       const t = 0.55;
-      m.projectiles.push(new Projectile({ x: p.x, y: p.y - 10, vx: (Math.cos(a) * d) / t, vy: (Math.sin(a) * d) / t, team: 'player', dmg: 42 * powerMult(), color: '#ff6fd0', life: t, kind: 'grenade', splash: 100, fly: true }));
+      m.projectiles.push(new Projectile({ x: p.x, y: p.y, vx: (Math.cos(a) * d) / t, vy: (Math.sin(a) * d) / t, team: 'player', dmg: 42 * powerMult(), color: '#ff6fd0', life: t, kind: 'grenade', splash: 100, fly: true }));
       Sfx.play('grenade');
     },
   },
@@ -86,7 +85,7 @@ const INVENTIONS = [
 
 function shootFrom(p, m, a, o) {
   m.projectiles.push(new Projectile({
-    x: p.x + Math.cos(a) * 14, y: p.y - 16 - (p.alt || 0) + Math.sin(a) * 8,
+    x: p.x + Math.cos(a) * 14, y: p.y + Math.sin(a) * 14, h: 0.95 + (p.alt || 0) * 0.095,
     vx: Math.cos(a) * o.speed, vy: Math.sin(a) * o.speed,
     team: 'player', dmg: o.dmg, color: o.color, life: o.life, effect: o.effect || null, r: o.r || 4, fly: !!p.jetpack,
   }));

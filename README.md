@@ -1,17 +1,21 @@
 # Jimmy Neutron: Retroville Unleashed
 
-An open-world, top-down sandbox game set in Retroville. You play as Jimmy Neutron with Goddard at your side, a full underground lab, eight inventions, three vehicles, and a town full of missions and enemies.
+An open-world 3D sandbox game set in Retroville. You play as Jimmy Neutron with Goddard at your side, a full underground lab, eight inventions, three vehicles, and a town full of missions and enemies.
+
+Everything is rendered with [Three.js](https://threejs.org) using cel-shaded, outlined models built in code, styled after the show: big-headed kids (Jimmy's soft-serve hair swirl, Carl's glasses, Sheen's spikes), a robot-dog Goddard with flap ears, egg-shaped Yokians, fuzzy Twonkies and retro-futurist Retroville buildings. These are fan-made stand-ins, not the show's actual assets.
 
 ## Play
 
-Open `index.html` in any modern desktop browser. There's no build step and nothing to install. It also works straight from disk (`file://`).
+Open `index.html` in any modern desktop browser with WebGL. There's no build step and nothing to install. Three.js is vendored in `vendor/`, so it also works offline straight from disk (`file://`).
 
 Keyboard and mouse required.
 
 | Key | Action |
 | --- | --- |
 | `W A S D` / arrows | Move, or drive a vehicle |
-| Mouse | Aim |
+| Mouse | Aim (overhead view) or look around (third-person view) |
+| `C` | Switch between overhead and third-person camera |
+| `Z` | Zoom the overhead camera |
 | Click / `Space` | Use the selected invention, or fire the vehicle weapon |
 | `1`–`8` / mouse wheel | Choose an invention |
 | `Shift` | Sprint, or vehicle boost |
@@ -57,9 +61,12 @@ Progress (neutronium, upgrades, completed missions) autosaves to the browser's l
 | --- | --- |
 | `js/util.js` | Math helpers, seeded RNG, save storage |
 | `js/audio.js` | Synthesized WebAudio sound effects |
-| `js/world.js` | Tiles, Retroville map generation, the lab, map rendering |
+| `js/world.js` | Tiles, Retroville map layout, the lab, ground texture and minimap drawing |
 | `js/entities.js` | Jimmy, Goddard, clones, NPCs, enemies and bosses, vehicles, projectiles, pickups, effects |
 | `js/inventions.js` | The eight inventions |
 | `js/missions.js` | Townsfolk and the mission system |
-| `js/ui.js` | Canvas HUD, minimap and DOM menus |
-| `js/main.js` | Game state, input, interaction, encounters, main loop, lighting |
+| `js/models.js` | Procedural 3D models: characters, Goddard, enemies, vehicles, items, buildings, lab stations |
+| `js/render3d.js` | Three.js scene, world building, entity syncing, cameras, day/night lighting, on-screen labels |
+| `js/ui.js` | HUD, minimap and menus |
+| `js/main.js` | Game state, input, interaction, encounters, main loop |
+| `vendor/three.min.js` | Three.js r128 (MIT license, see `vendor/THREE-LICENSE`) |
