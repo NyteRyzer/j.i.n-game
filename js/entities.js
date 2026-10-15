@@ -102,6 +102,8 @@ function damage(target, amount, opts = {}) {
   }
   if (target.invulnerable) return;
   if (target.boss && target.shrunk > 0) amount *= 1.6;
+  // difficulty: hits on Jimmy's side (Jimmy, his ride, Goddard, clones) scale with the setting
+  if (target.teamNow && target.teamNow() === 'player' && !(target instanceof Enemy)) amount *= Settings.diff().enemyDmg;
   if (target instanceof Vehicle) amount *= 1 - 0.15 * (G.upgrades.armor || 0);
   target.hp -= amount;
   target.flash = 0.12;
@@ -527,7 +529,7 @@ class Enemy extends Entity {
     super(x, y, def.r);
     this.type = type; this.def = def;
     this.team = 'enemy';
-    this.hp = this.maxHp = def.hp;
+    this.hp = this.maxHp = type === 'dummy' ? def.hp : Math.round(def.hp * Settings.diff().enemyHp);
     this.boss = !!def.boss;
     this.moveMode = def.fly ? 'fly' : 'walk';
     this.cd = rand(0.3, def.cd || 1);
@@ -584,12 +586,13 @@ class Enemy extends Entity {
         break;
       }
       case 'saucer': {
+        this.updateBurst(dt, m);
         const orbit = a + Math.PI + 0.9 * this.strafe;
         const gx = target.x + Math.cos(orbit) * 200, gy = target.y + Math.sin(orbit) * 200;
         this.moveToward(dt, m, Math.atan2(gy - this.y, gx - this.x), speed);
         if (this.cd <= 0) {
           this.cd = def.cd;
-          for (let k = 0; k < 3; k++) setTimeout(() => { if (!this.dead && this.frozen <= 0 && G.map === m) this.shoot(m, angleTo(this, target) + rand(-0.1, 0.1), def.bullet, def.dmg, '#7aff6a'); }, k * 150);
+          this.burst = { left: 3, t: 0, target };
         }
         if (this.hypno <= 0 && (this.timers.spawn -= dt) <= 0) {
           this.timers.spawn = 9;
@@ -603,6 +606,16 @@ class Enemy extends Entity {
     }
     // Touching damage for small swarmers handled by melee; bosses also bump.
     if (this.boss && d < this.r + target.r && this.ramCd <= 0) { this.ramCd = 0.8; damage(target, 10, { knock: 500, from: this }); }
+  }
+  updateBurst(dt, m) {
+    const b = this.burst;
+    if (!b) return;
+    b.t -= dt;
+    if (b.t > 0) return;
+    if (b.target.dead) { this.burst = null; return; }
+    this.shoot(m, angleTo(this, b.target) + rand(-0.1, 0.1), this.def.bullet, this.def.dmg, '#7aff6a');
+    b.t = 0.15;
+    if (--b.left <= 0) this.burst = null;
   }
   updateGoobot(dt, m, target, d, a, speed) {
     const orbit = a + Math.PI + 0.6;

@@ -78,7 +78,8 @@ const UI = {
   },
 
   missionBoard() {
-    const avail = Missions.available();
+    const alert = Missions.getAlert();
+    const avail = Missions.available().concat(alert && !(Missions.active && Missions.active.def.id === 'alert') ? [alert] : []);
     const done = Missions.defs.filter((d) => Missions.completed.has(d.id));
     const row = (d) => {
       const fromVox = d.giver === 'VOX';
@@ -156,7 +157,7 @@ const UI = {
       ${a ? `<p class="dlg-text"><b>${a.def.title}</b><br>${Missions.stepText()}</p><div class="btn-row"><button class="btn danger small" data-abandon>Abandon mission</button></div>` : '<p class="dlg-text">No active mission. Look for a yellow <b class="neu">!</b> over someone\'s head, or check VOX in the lab.</p>'}
       <h3>Who needs help</h3>
       <ul class="list">${avail.map((d) => `<li><div><b>${d.title}</b><small>${d.giver === 'VOX' ? 'VOX computer in the lab' : d.giver}</small></div><span class="tag">${d.reward}</span></li>`).join('') || '<li><div>Nobody right now. Enjoy the sandbox!</div></li>'}</ul>
-      <p class="muted">Story progress: ${Missions.completed.size}/${Missions.defs.length} missions · Enemies defeated: ${G.stats.kills}</p>
+      <p class="muted">Story progress: ${Missions.completed.size}/${Missions.defs.length} missions · Golden Atoms: ${Collectibles.found.size}/${Collectibles.total} · Enemies defeated: ${G.stats.kills}</p>
       <div class="btn-row"><button class="btn" data-close>Close</button></div>
     `, { cls: 'wide' });
     const ab = el.querySelector('[data-abandon]');
@@ -173,7 +174,47 @@ const UI = {
       <div><kbd>Q</kbd> Mission log</div><div><kbd>M</kbd> Town map</div>
       <div><kbd>C</kbd> Overhead / third-person camera</div><div><kbd>Z</kbd> Zoom (overhead view)</div>
       <div><kbd>Esc</kbd> Pause</div><div><kbd>N</kbd> Mute sound</div>
+      <div><kbd>F11</kbd> Fullscreen</div><div><kbd>F3</kbd> Frame-rate counter</div>
+    </div>
+    <h3>Controller</h3>
+    <div class="controls">
+      <div><kbd>Left stick</kbd> Move / drive</div><div><kbd>Right stick</kbd> Aim / look</div>
+      <div><kbd>RT</kbd> Fire · <kbd>LT</kbd> Sprint / boost</div><div><kbd>LB</kbd> <kbd>RB</kbd> Switch invention</div>
+      <div><kbd>A</kbd> Interact · <kbd>B</kbd> Burp dash</div><div><kbd>X</kbd> Jetpack · <kbd>Y</kbd> Goddard mode</div>
+      <div><kbd>D-pad ↑</kbd> Mission log · <kbd>↓</kbd> Camera</div><div><kbd>R3</kbd> Goddard Bike · <kbd>Back</kbd> Map</div>
     </div>`;
+  },
+
+  settings(onBack) {
+    const d = Settings.data;
+    const el = this.open(`
+      <div class="dlg-name">Settings</div>
+      <div class="settings">
+        <label for="set-music">Music volume</label><input type="range" id="set-music" min="0" max="1" step="0.05" value="${d.music}">
+        <label for="set-sfx">Sound effects</label><input type="range" id="set-sfx" min="0" max="1" step="0.05" value="${d.sfx}">
+        <label for="set-sens">Mouse &amp; stick sensitivity</label><input type="range" id="set-sens" min="0.3" max="2.5" step="0.1" value="${d.sensitivity}">
+        <label for="set-quality">Graphics</label>
+        <select id="set-quality">${['high', 'medium', 'low'].map((q) => `<option value="${q}" ${d.quality === q ? 'selected' : ''}>${q[0].toUpperCase() + q.slice(1)}${q === 'low' ? ' (no shadows, fastest)' : q === 'high' ? ' (sharp shadows)' : ''}</option>`).join('')}</select>
+        <label for="set-diff">Difficulty</label>
+        <select id="set-diff">${Object.entries(DIFFICULTY).map(([k, v]) => `<option value="${k}" ${d.difficulty === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
+        <label for="set-invert">Invert look up/down</label><input type="checkbox" id="set-invert" ${d.invertY ? 'checked' : ''}>
+        <label for="set-fps">Show frame rate</label><input type="checkbox" id="set-fps" ${d.showFps ? 'checked' : ''}>
+      </div>
+      <p class="muted">Difficulty changes enemy damage right away and enemy health for newly spawned enemies.</p>
+      <div class="btn-row"><button class="btn primary" data-close>Done</button><button class="btn" data-full>Toggle fullscreen</button></div>
+    `, { cls: 'wide' });
+    const bind = (id, key, conv) => el.querySelector('#' + id).addEventListener(el.querySelector('#' + id).type === 'checkbox' ? 'change' : 'input', (e) => {
+      d[key] = conv(e.target); Settings.save(); Settings.apply();
+    });
+    bind('set-music', 'music', (t) => +t.value);
+    bind('set-sfx', 'sfx', (t) => +t.value);
+    bind('set-sens', 'sensitivity', (t) => +t.value);
+    bind('set-quality', 'quality', (t) => t.value);
+    bind('set-diff', 'difficulty', (t) => t.value);
+    bind('set-invert', 'invertY', (t) => t.checked);
+    bind('set-fps', 'showFps', (t) => t.checked);
+    el.querySelector('[data-full]').addEventListener('click', toggleFullscreen);
+    el.querySelector('[data-close]').addEventListener('click', () => { this.close(); if (onBack) onBack(); });
   },
 
   pause() {
@@ -182,11 +223,18 @@ const UI = {
       ${this.controlsHtml()}
       <div class="btn-row">
         <button class="btn primary" data-close>Resume</button>
+        <button class="btn" data-settings>Settings</button>
         <button class="btn" data-mute>${Sfx.muted ? 'Unmute' : 'Mute'} sound</button>
+        <button class="btn" data-title>Save &amp; quit to title</button>
+        ${window.desktopApp ? '<button class="btn" data-quit>Save &amp; exit game</button>' : ''}
         <button class="btn danger" data-reset>Reset save</button>
       </div>
     `, { cls: 'wide' });
     el.querySelector('[data-close]').addEventListener('click', () => this.close());
+    el.querySelector('[data-settings]').addEventListener('click', () => this.settings(() => this.pause()));
+    el.querySelector('[data-title]').addEventListener('click', () => { G.save(); location.reload(); });
+    const q = el.querySelector('[data-quit]');
+    if (q) q.addEventListener('click', () => { G.save(); window.desktopApp.quit(); });
     el.querySelector('[data-mute]').addEventListener('click', (e) => { e.target.textContent = (Sfx.toggle() ? 'Unmute' : 'Mute') + ' sound'; });
     el.querySelector('[data-reset]').addEventListener('click', (e) => {
       if (e.target.dataset.armed) { Store.clear(); location.reload(); return; }
@@ -350,7 +398,7 @@ function drawHUD(ctx, W, H) {
   // --- Interaction prompt ---
   const it = G.currentInteract;
   if (it && !UI.isOpen()) {
-    const text = `[E] ${it.label}`;
+    const text = `${Input.usingPad ? '[A]' : '[E]'} ${it.label}`;
     ctx.font = hudFont(15);
     const w = ctx.measureText(text).width + 30, y = H - (p.vehicle ? 60 : small ? 112 : 136);
     ctx.fillStyle = 'rgba(16,19,40,0.85)'; roundRect(ctx, W / 2 - w / 2, y - 17, w, 34, 17); ctx.fill();
@@ -362,8 +410,8 @@ function drawHUD(ctx, W, H) {
   if (G.zoneT > 0) {
     ctx.globalAlpha = clamp(G.zoneT, 0, 1);
     ctx.font = hudFont(small ? 18 : 26, true); ctx.textAlign = 'center';
-    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(16,19,40,0.8)'; ctx.strokeText(G.zoneName, W / 2, H * 0.22);
-    ctx.fillStyle = '#fff'; ctx.fillText(G.zoneName, W / 2, H * 0.22);
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(16,19,40,0.8)'; ctx.strokeText(G.zoneName, W / 2, H * 0.34);
+    ctx.fillStyle = '#fff'; ctx.fillText(G.zoneName, W / 2, H * 0.34);
     ctx.globalAlpha = 1;
   }
 
@@ -376,10 +424,16 @@ function drawHUD(ctx, W, H) {
   // crosshair
   if (!UI.isOpen()) {
     const chase = R3.cam.mode === 'chase';
-    const { x, y } = chase ? { x: W / 2, y: H * 0.42 } : G.input.mouse;
+    const padAim = Input.usingPad && !chase;
+    const { x, y } = chase ? { x: W / 2, y: H * 0.42 } : padAim ? R3.worldToScreen(Input.worldMouse.x, Input.worldMouse.y, 0.9) : G.input.mouse;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.moveTo(x - 14, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 14); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 14); ctx.stroke();
     ctx.fillStyle = INVENTIONS[p.invIndex].color; ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill();
+  }
+
+  if (Settings.data.showFps) {
+    ctx.font = hudFont(12); ctx.textAlign = 'right'; ctx.fillStyle = G.fps < 40 ? '#ff8a8a' : '#7aff6a';
+    ctx.fillText(`${Math.round(G.fps)} FPS`, W - 16, H - 14);
   }
 
   if (G.hurtFlash > 0) {
@@ -415,6 +469,7 @@ function drawMinimap(ctx, x, y, w, h) {
     else if (e instanceof Vehicle) { col = '#3fa7ff'; r = 3; }
     else if (e instanceof NPC && !e.citizen) { col = Missions.npcMarker(e.name) ? '#ffe14f' : '#ffffff'; r = Missions.npcMarker(e.name) ? 3.5 : 2; }
     else if (e instanceof MissionItem) { col = '#7aff6a'; r = 3; }
+    else if (e instanceof GoldenAtom && dist(e, p) < 14 * TILE) { col = Math.sin(G.time * 6) > 0 ? '#ffd52e' : '#b8901a'; r = 2.5; }
     if (!col) continue;
     const q = toMini(e.x, e.y);
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();

@@ -40,9 +40,27 @@ const R3 = {
     this.scene.add(this.groups.town, this.groups.lab);
     this.dynamic = new THREE.Group(); this.scene.add(this.dynamic);
     this.initParticles();
+    this.initSky();
   },
 
+  // Graphics quality: shadow resolution and render resolution.
+  quality: 'high',
+  setQuality(q) {
+    const prevShadows = this.renderer.shadowMap.enabled;
+    this.quality = q;
+    const shadows = q !== 'low';
+    this.renderer.shadowMap.enabled = shadows;
+    const size = q === 'high' ? 2048 : 1024;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    if (prevShadows !== shadows) this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
+    if (this.W) this.resize(this.W, this.H, this.dprIn || 1);
+  },
   resize(w, h, dpr) {
+    this.dprIn = dpr;
+    dpr = Math.min(dpr, this.quality === 'high' ? 1.5 : this.quality === 'medium' ? 1 : 0.75);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
@@ -61,7 +79,7 @@ const R3 = {
       const g = makeBuilding(b);
       g.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; } });
       const mats = [];
-      g.traverse((o) => { if (o.isMesh && o.material !== WINDOW_MAT) { o.material = o.material.clone(); mats.push(o.material); } });
+      g.traverse((o) => { if (o.isMesh && o.material !== WINDOW_MAT) { o.material = o.material.clone(); o.material.userData.wasTransparent = o.material.transparent; o.material.userData.baseOpacity = o.material.opacity; mats.push(o.material); } });
       this.groups.town.add(g);
       this.buildings.push({ b, g, mats, fade: 1 });
     }
@@ -201,6 +219,54 @@ const R3 = {
   },
 
   // -------------------------------------------------------------------------
+  // Sky: gradient dome, stars at night, drifting clouds (seen in third-person)
+  // -------------------------------------------------------------------------
+  initSky() {
+    this.skyMat = new THREE.ShaderMaterial({
+      uniforms: { top: { value: new THREE.Color('#4aa8ff') }, bottom: { value: new THREE.Color('#bfe8ff') } },
+      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y * 1.8 + 0.08, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, h), 1.0); }',
+      side: THREE.BackSide, depthWrite: false,
+    });
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 12), this.skyMat);
+    this.sky.renderOrder = -1;
+    this.scene.add(this.sky);
+    const rng = mulberry32(5), pos = [];
+    for (let i = 0; i < 500; i++) {
+      const a = rng() * Math.PI * 2, el = 0.08 + rng() * 1.3;
+      pos.push(Math.cos(a) * Math.cos(el) * 280, Math.sin(el) * 280, Math.sin(a) * Math.cos(el) * 280);
+    }
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    this.starMat = new THREE.PointsMaterial({ color: '#ffffff', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
+    this.stars = new THREE.Points(sg, this.starMat);
+    this.scene.add(this.stars);
+    this.clouds = new THREE.Group();
+    const puff = toon('#ffffff', { transparent: true, opacity: 0.92 });
+    for (let i = 0; i < 26; i++) {
+      const c = new THREE.Group();
+      const n = 3 + Math.floor(rng() * 3);
+      for (let k = 0; k < n; k++) c.add(mesh(G_SPHERE(12, 8), puff, [k * 2.2 - n, rng() * 0.8, (rng() - 0.5) * 2], [2 + rng() * 1.6, 1.2 + rng() * 0.6, 1.8 + rng()], { shadow: false }));
+      c.position.set(rng() * 190 - 20, 34 + rng() * 10, rng() * 150 - 20);
+      c.userData.speed = 0.4 + rng() * 0.5;
+      this.clouds.add(c);
+    }
+    this.scene.add(this.clouds);
+  },
+  updateSky(dt, n, lab) {
+    const day = n < 0.5;
+    this.skyMat.uniforms.top.value.set(lab ? '#05070f' : n < 0.2 ? '#3d9bff' : n < 0.6 ? '#5a5ab8' : '#070a24');
+    this.skyMat.uniforms.bottom.value.set(lab ? '#05070f' : n < 0.2 ? '#cdeeff' : n < 0.6 ? '#ffa070' : '#1a1f4a');
+    this.sky.visible = !lab; this.clouds.visible = !lab; this.stars.visible = !lab;
+    this.starMat.opacity = clamp((n - 0.5) * 2, 0, 1);
+    this.sky.position.copy(this.camera.position); this.stars.position.copy(this.camera.position);
+    for (const c of this.clouds.children) {
+      c.position.x += c.userData.speed * dt;
+      if (c.position.x > 180) c.position.x = -30;
+      c.children.forEach((m) => { m.material.color.set(day ? '#ffffff' : '#5a6090'); });
+    }
+  },
+
+  // -------------------------------------------------------------------------
   // Particles, rings, fireballs
   // -------------------------------------------------------------------------
   initParticles() {
@@ -272,6 +338,7 @@ const R3 = {
     }
     if (e instanceof NPC) return makeCharacter(e.look);
     if (e instanceof MissionItem) return makeItemModel(e.kind);
+    if (e instanceof GoldenAtom) return makeItemModel('goldatom');
     if (e instanceof Enemy) return makeEnemyModel(e.type);
     if (e instanceof Vehicle) return makeVehicleModel(e.kind);
     return null;
@@ -346,6 +413,12 @@ const R3 = {
       face(e.facing);
       animateCharacter(md, e.walkPhase || 0, e instanceof NPC ? e.moving : rec.moving, dt);
       if (e instanceof Clone) root.visible = !(e.life < 2 && Math.floor(G.time * 10) % 2 === 0);
+      return;
+    }
+    if (e instanceof GoldenAtom) {
+      root.position.y = e.h + Math.sin(G.time * 2 + e.atomId) * 0.15;
+      md.body.rotation.y = G.time * 2;
+      md.body.children.forEach((c, i) => { if (i) c.rotation.x = G.time * (1 + i * 0.3); });
       return;
     }
     if (e instanceof MissionItem) {
@@ -518,6 +591,7 @@ const R3 = {
     this.lampMat.color.set(n > 0.3 ? '#fff1b0' : '#d8d4c0');
     this.haloMat.opacity = n * 0.8;
     this.groups.town.visible = !lab; this.groups.lab.visible = lab;
+    this.updateSky(this.lastDt || 0, n, lab);
   },
 
   // Fade buildings that hide Jimmy from the overhead camera
@@ -532,11 +606,12 @@ const R3 = {
       if (Math.abs(rec.fade - target) < 0.01) continue;
       rec.fade = lerp(rec.fade, target, Math.min(1, dt * 8));
       if (Math.abs(rec.fade - target) < 0.02) rec.fade = target;
-      for (const mt of rec.mats) { mt.transparent = rec.fade < 1 || mt.userData.wasTransparent; mt.opacity = rec.fade; }
+      for (const mt of rec.mats) { mt.transparent = rec.fade < 1 || mt.userData.wasTransparent; mt.opacity = rec.fade * mt.userData.baseOpacity; }
     }
   },
 
   update(dt, snap) {
+    this.lastDt = dt;
     for (const a of GFX.animators) a(G.time);
     if (G.started) {
       this.syncEntities(dt);

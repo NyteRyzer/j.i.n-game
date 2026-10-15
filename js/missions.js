@@ -140,7 +140,29 @@ const Missions = {
   active: null,
   completed: new Set(),
 
-  def(id) { return this.defs.find((d) => d.id === id); },
+  def(id) { return id === 'alert' ? this.getAlert() : this.defs.find((d) => d.id === id); },
+
+  // Repeatable emergency from VOX: a random enemy outbreak somewhere in town.
+  alert: null,
+  getAlert() {
+    if (!this.completed.has('tutorial')) return null;
+    if (this.alert) return this.alert;
+    const town = G.maps.town;
+    const zones = town.zones.filter((z) => z.enemies.length && !z.safe && z.name !== 'Retroville River');
+    const z = pick(zones);
+    const type = pick(z.enemies.filter((t) => t !== 'saucer'));
+    const count = { twonky: 9, yokian: 6, robot: 4, nanobot: 16 }[type] || 6;
+    const c = tp(Math.floor(z.x + z.w / 2), Math.floor(z.y + z.h / 2));
+    const name = { twonky: 'Twonkie', yokian: 'Yokian Soldier', robot: 'Calamitous Bot', nanobot: 'Nanobot' }[type] || ENEMY_TYPES[type].name;
+    this.alert = {
+      id: 'alert', giver: 'VOX', repeatable: true, reward: 50 + count * 12,
+      title: `Emergency: ${name === 'Twonkie' ? 'Twonky' : name} Outbreak`,
+      offer: `VOX: "Alert! ${count} ${name}s are causing chaos in ${z.name}. Citizens request immediate Neutron intervention."`,
+      steps: [{ type: 'kill', target: type, count, spawn: [{ type, x: c.x, y: c.y, n: count, spread: 200 }], text: `Stop the ${name}s in ${z.name}`, marker: c }],
+      outro: 'VOX: "Outbreak contained. Another alert will be waiting on the mission board."',
+    };
+    return this.alert;
+  },
   isAvailable(d) { return !this.completed.has(d.id) && (d.requires || []).every((r) => this.completed.has(r)); },
   available() { return this.defs.filter((d) => this.isAvailable(d)); },
   availableFrom(giver) { return this.available().filter((d) => d.giver === giver); },
@@ -188,7 +210,7 @@ const Missions = {
 
   complete() {
     const d = this.active.def;
-    this.completed.add(d.id);
+    if (d.repeatable) this.alert = null; else this.completed.add(d.id);
     this.active = null;
     G.neutronium += d.reward;
     Sfx.play('mission');

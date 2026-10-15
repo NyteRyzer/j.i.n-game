@@ -4,14 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Jimmy Neutron: Retroville Unleashed</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
 <canvas id="hud"></canvas>
+
+<div id="loading"><div class="atom" aria-hidden="true"><span></span><span></span><span></span><i></i></div><p>Building Retroville…</p></div>
 
 <div id="title">
   <div class="title-card">
@@ -22,12 +21,13 @@
     <div class="btn-row center">
       <button class="btn primary big" id="btn-continue" hidden>Continue</button>
       <button class="btn big" id="btn-new">New Game</button>
+      <button class="btn big" id="btn-settings">Settings</button>
     </div>
     <details>
       <summary>Controls</summary>
       <div id="title-controls"></div>
     </details>
-    <p class="t-note">Keyboard and mouse required · Press Enter to play</p>
+    <p class="t-note">Keyboard &amp; mouse or a controller · Press Enter or Start to play</p>
   </div>
 </div>
 
@@ -41,10 +41,12 @@
 <script src="js/world.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/inventions.js"></script>
+<script src="js/collectibles.js"></script>
 <script src="js/models.js"></script>
 <script src="js/render3d.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -42,18 +42,20 @@ const DOOR_LINES = {
 // ---------------------------------------------------------------------------
 const Input = {
   keys: new Set(), mouse: { x: 0, y: 0 }, mouseDown: false, firePressed: false, worldMouse: { x: 0, y: 0 }, aim: 0,
-  get up() { return this.keys.has('w') || this.keys.has('arrowup'); },
-  get down() { return this.keys.has('s') || this.keys.has('arrowdown'); },
-  get left() { return this.keys.has('a') || this.keys.has('arrowleft'); },
-  get right() { return this.keys.has('d') || this.keys.has('arrowright'); },
-  get sprint() { return this.keys.has('shift'); },
-  get fire() { return this.mouseDown || this.keys.has(' '); },
+  usingPad: false,
+  get up() { return this.keys.has('w') || this.keys.has('arrowup') || Pad.my < -0.4; },
+  get down() { return this.keys.has('s') || this.keys.has('arrowdown') || Pad.my > 0.4; },
+  get left() { return this.keys.has('a') || this.keys.has('arrowleft') || Pad.mx < -0.4; },
+  get right() { return this.keys.has('d') || this.keys.has('arrowright') || Pad.mx > 0.4; },
+  get sprint() { return this.keys.has('shift') || Pad.sprint; },
+  get fire() { return this.mouseDown || this.keys.has(' ') || Pad.fire; },
   clearMouse() { this.mouseDown = false; this.firePressed = false; },
 };
 G.input = Input;
 // Movement keys -> world-space direction. In chase view it's relative to the camera.
 function moveVector() {
   let ix = (Input.right ? 1 : 0) - (Input.left ? 1 : 0), iy = (Input.down ? 1 : 0) - (Input.up ? 1 : 0);
+  if (Pad.mx || Pad.my) { ix = Pad.mx; iy = Pad.my; } // analog stick
   if (R3.cam.mode === 'chase' && (ix || iy)) {
     const yaw = R3.cam.yaw, f = -iy, sd = ix;
     return { mx: Math.cos(yaw) * f + Math.cos(yaw + Math.PI / 2) * sd, my: Math.sin(yaw) * f + Math.sin(yaw + Math.PI / 2) * sd };
@@ -66,8 +68,43 @@ function inputSnapshot() {
   return { up: Input.up, down: Input.down, left: Input.left, right: Input.right, mx: mv.mx, my: mv.my, sprint: Input.sprint, fire: Input.fire, aim: Input.aim, worldMouse: Input.worldMouse };
 }
 
+// Controller buttons (see Pad in settings.js)
+function padAction(a) {
+  const p = G.player, n = INVENTIONS.length;
+  Input.usingPad = true;
+  switch (a) {
+    case 'e': doInteract(); break;
+    case 'g': cycleGoddard(); break;
+    case 'v': toggleBike(); break;
+    case 'q': UI.questLog(); break;
+    case 'm': UI.bigMap(); break;
+    case 'c': toggleCamera(); break;
+    case 'escape': UI.pause(); break;
+    case 'prev': case 'next': if (!p.vehicle) { p.invIndex = (p.invIndex + (a === 'next' ? 1 : -1) + n) % n; Sfx.play('ui'); } break;
+    case 'burp': case 'jet': {
+      if (p.vehicle) break;
+      const keep = p.invIndex;
+      p.invIndex = INVENTIONS.findIndex((i) => i.id === (a === 'burp' ? 'burp' : 'jetpack'));
+      Input.firePressed = true; useInvention(p, Input.aim, Input.worldMouse); Input.firePressed = false;
+      p.invIndex = keep;
+      break;
+    }
+  }
+}
+
+function toggleFullscreen() {
+  if (window.desktopApp) return window.desktopApp.toggleFullscreen();
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  } catch (e) { /* fullscreen unavailable */ }
+}
+
 function onKeyDown(e) {
   const k = e.key.toLowerCase();
+  if (k === 'f11') { e.preventDefault(); toggleFullscreen(); return; }
+  if (k === 'f3') { e.preventDefault(); Settings.data.showFps = !Settings.data.showFps; Settings.save(); return; }
+  Input.usingPad = false;
   if (!G.started) { if (k === 'enter') startGame(!!Store.load()); return; }
   if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
   if (UI.isOpen()) {
@@ -97,9 +134,11 @@ function setupInput(canvas) {
   window.addEventListener('blur', () => { Input.keys.clear(); Input.clearMouse(); });
   canvas.addEventListener('mousemove', (e) => {
     Input.mouse.x = e.clientX; Input.mouse.y = e.clientY;
+    Input.usingPad = false;
     if (R3.cam.mode === 'chase' && G.started && !UI.isOpen() && (document.pointerLockElement === canvas || e.buttons & 2)) {
-      R3.cam.yaw += e.movementX * 0.0032;
-      R3.cam.pitch = clamp(R3.cam.pitch + e.movementY * 0.0025, 0.08, 1.15);
+      const sens = Settings.data.sensitivity, inv = Settings.data.invertY ? -1 : 1;
+      R3.cam.yaw += e.movementX * 0.0032 * sens;
+      R3.cam.pitch = clamp(R3.cam.pitch + e.movementY * 0.0025 * sens * inv, 0.08, 1.15);
       R3.cam.lastMouse = G.time;
     }
   });
@@ -141,28 +180,45 @@ function setupWorld() {
 }
 
 function startGame(continueSave) {
+  if (G.started) return;
   Sfx.init();
   document.getElementById('title').hidden = true;
   G.started = true;
-  R3.update(0, true);
   const save = continueSave ? Store.load() : null;
   if (save) {
     G.neutronium = save.neutronium || 0;
     G.upgrades = save.upgrades || {};
     G.stats = save.stats || { kills: 0 };
     Missions.restore(save.completed);
+    Collectibles.restore(save.atoms);
+    if (typeof save.dayTime === 'number') G.dayTime = save.dayTime;
   } else Store.clear();
+  Collectibles.spawn(G.maps.town);
   G.player.recalcStats(); G.player.hp = G.player.maxHp; G.player.energy = G.player.maxEnergy;
   G.goddard.recalcStats(true);
+  if (save && save.pos && G.maps[save.pos.map]) {
+    const m = G.maps[save.pos.map], spot = m.findOpen(save.pos.x, save.pos.y, G.player.r, 'walk');
+    G.changeMap(save.pos.map, spot);
+  }
+  R3.update(0, true);
   if (!Missions.completed.has('tutorial')) {
     UI.dialogue({ name: 'Goddard', text: 'BARK! BARK! <i>(Translation: Jimmy, strange readings all over Retroville. Get to the lab!)</i>', buttons: [{ label: "Let's go!", action: () => Missions.start(Missions.def('tutorial')) }] });
   } else {
-    G.toast('Welcome back, Jimmy! Press Q for your mission log.');
+    const resume = save && save.activeMission && Missions.def(save.activeMission);
+    if (resume && Missions.isAvailable(resume)) Missions.start(resume);
+    G.toast(resume ? `Welcome back, Jimmy! Resuming "${resume.title}".` : 'Welcome back, Jimmy! Press Q for your mission log.');
   }
 }
 
 G.save = function () {
-  Store.save({ neutronium: G.neutronium, upgrades: G.upgrades, completed: Missions.serialize(), stats: G.stats });
+  if (!G.started) return;
+  const p = G.player, a = Missions.active;
+  Store.save({
+    version: 2, neutronium: G.neutronium, upgrades: G.upgrades, completed: Missions.serialize(), stats: G.stats,
+    atoms: Collectibles.serialize(), dayTime: G.dayTime,
+    pos: p.vehicle ? { map: G.map.name, x: p.vehicle.x, y: p.vehicle.y } : { map: G.map.name, x: p.x, y: p.y },
+    activeMission: a && !a.def.repeatable ? a.def.id : null,
+  });
 };
 G.toast = (t) => UI.toast(t);
 
@@ -361,6 +417,16 @@ function toggleCamera() {
 
 function update(dt) {
   G.time += dt;
+  // controller right stick: aim in overhead view, look around in third-person
+  if (Pad.ax || Pad.ay) {
+    Input.usingPad = true;
+    const sens = Settings.data.sensitivity;
+    if (R3.cam.mode === 'chase') {
+      R3.cam.yaw += Pad.ax * dt * 2.6 * sens;
+      R3.cam.pitch = clamp(R3.cam.pitch + Pad.ay * dt * 1.6 * sens * (Settings.data.invertY ? -1 : 1), 0.08, 1.15);
+      R3.cam.lastMouse = G.time;
+    } else Input.padAim = Math.atan2(Pad.ay, Pad.ax);
+  } else if (Input.usingPad && (Pad.mx || Pad.my) && !G.player.vehicle) Input.padAim = Math.atan2(Pad.my, Pad.mx);
   G.dayTime = (G.dayTime + dt / 360) % 1;
   G.shake = Math.max(0, G.shake - dt * 30);
   G.hurtFlash = Math.max(0, G.hurtFlash - dt);
@@ -369,6 +435,9 @@ function update(dt) {
   if (R3.cam.mode === 'chase') {
     Input.aim = R3.cam.yaw;
     Input.worldMouse = { x: p.x + Math.cos(R3.cam.yaw) * 300, y: p.y + Math.sin(R3.cam.yaw) * 300 };
+  } else if (Input.usingPad) {
+    Input.aim = Input.padAim === undefined ? p.facing : Input.padAim;
+    Input.worldMouse = { x: p.x + Math.cos(Input.aim) * 260, y: p.y + Math.sin(Input.aim) * 260 };
   } else {
     Input.worldMouse = R3.mouseWorld(Input.mouse.x, Input.mouse.y);
     Input.aim = Math.atan2(Input.worldMouse.y - p.y, Input.worldMouse.x - p.x);
@@ -420,9 +489,29 @@ function nightAmount() {
 }
 
 let last = performance.now();
+function musicMood() {
+  if (!G.started) return 'explore';
+  if (G.map.name === 'lab') return 'lab';
+  const p = G.player;
+  let threat = 0;
+  for (const e of G.map.entities) {
+    if (!(e instanceof Enemy) || e.dead || e.type === 'dummy' || e.teamNow() !== 'enemy') continue;
+    const d = dist(e, p);
+    if (e.boss && d < 900) return 'boss';
+    if (d < 420) threat++;
+  }
+  if (threat >= 2) return 'combat';
+  return nightAmount() > 0.5 ? 'night' : 'explore';
+}
+
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  G.fps = lerp(G.fps || 60, 1 / Math.max(1e-3, (now - (G.lastFrame || now - 16)) / 1000), 0.05);
+  G.lastFrame = now;
+  Pad.poll();
+  Music.setMood(musicMood());
+  Music.update();
   if (G.started && !UI.isOpen()) update(dt);
   else if (!G.started) G.time += dt;
   R3.update(dt);
@@ -435,8 +524,10 @@ function frame(now) {
 }
 
 function boot() {
+  Settings.load();
   UI.init();
   R3.init(canvas);
+  Settings.apply();
   resize();
   window.addEventListener('resize', resize);
   setupWorld();
@@ -446,9 +537,24 @@ function boot() {
   const cont = document.getElementById('btn-continue');
   cont.hidden = !hasSave;
   cont.addEventListener('click', () => startGame(true));
-  document.getElementById('btn-new').addEventListener('click', () => startGame(false));
+  document.getElementById('btn-new').addEventListener('click', () => {
+    if (hasSave && !document.getElementById('btn-new').dataset.armed) {
+      const b = document.getElementById('btn-new'); b.dataset.armed = '1'; b.textContent = 'Click again to start over';
+      return;
+    }
+    startGame(false);
+  });
+  document.getElementById('btn-settings').addEventListener('click', () => { Sfx.init(); UI.settings(); });
   document.getElementById('title-controls').innerHTML = UI.controlsHtml();
+  // Pause when the window loses focus, and save when it closes.
+  window.addEventListener('blur', () => { if (G.started && !UI.isOpen()) UI.pause(); });
+  window.addEventListener('beforeunload', () => G.save());
+  document.getElementById('loading').hidden = true;
   requestAnimationFrame(frame);
 }
 
-boot();
+// Let the loading screen paint (and the bundled fonts load) before the heavy world build.
+const fontsReady = document.fonts && document.fonts.load
+  ? Promise.race([Promise.all(['400 16px Bungee', '700 16px Fredoka', '400 16px Fredoka'].map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))])
+  : Promise.resolve();
+fontsReady.catch(() => {}).then(() => setTimeout(boot, 30));

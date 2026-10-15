@@ -507,10 +507,15 @@ function makeItemModel(kind) {
   } else if (kind === 'neutronium') {
     body.add(ball(basic('#bfffb0'), 0, 0.35, 0, 0.06, { shadow: false }));
     for (let k = 0; k < 3; k++) { const g = new THREE.Group(); g.position.y = 0.35; g.rotation.set(k * 1.05, k * 0.7, 0); g.add(mesh(geo('nring', () => new THREE.TorusGeometry(0.15, 0.015, 5, 20)), basic('#7aff6a'), null, [1, 0.4, 1], { shadow: false })); body.add(g); }
+  } else if (kind === 'goldatom') {
+    const gold = basic('#ffd52e');
+    body.add(ball(toon('#fff3b0', { emissive: '#a07a00' }), 0, 0.35, 0, 0.13, { shadow: false }));
+    for (let k = 0; k < 3; k++) { const g = new THREE.Group(); g.position.y = 0.35; g.rotation.set(k * 1.05, k * 0.7, 0); g.add(mesh(geo('gring', () => new THREE.TorusGeometry(0.34, 0.035, 6, 28)), gold, null, [1, 0.42, 1], { shadow: false })); body.add(g); }
+    root.add(mesh(G_CYL(), basic('#ffd52e', { transparent: true, opacity: 0.18, depthWrite: false }), [0, -1.5, 0], [0.22, 3.4, 0.22], { shadow: false }));
   } else if (kind === 'energy') {
     body.add(mesh(geo('oct', () => new THREE.OctahedronGeometry(0.16)), basic('#3fe0ff'), [0, 0.35, 0], [1, 1.5, 1], { shadow: false }));
   }
-  if (kind !== 'neutronium' && kind !== 'energy' && kind !== 'health') {
+  if (kind !== 'neutronium' && kind !== 'energy' && kind !== 'health' && kind !== 'goldatom') {
     root.add(mesh(G_CYL(), basic('#ffe14f', { transparent: true, opacity: 0.22, depthWrite: false }), [0, 2, 0], [0.3, 4, 0.3], { shadow: false }));
   }
   return { root, body };
