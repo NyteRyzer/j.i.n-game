@@ -49,31 +49,31 @@ jobs:
             dist/*.tar.gz
             dist/*.dmg
             dist/*.zip
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: out
-          merge-multiple: true
-      - name: Publish release
+      # Each platform publishes its own files as soon as it's built, so a slow
+      # macOS runner never holds up the Linux downloads (or the other way round).
+      - name: Publish to release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          NOTES="Download the file for your computer:
-          - Linux: the .AppImage (any distro), the .deb (Ubuntu/Debian) or the .tar.gz
-          - Mac with Apple Silicon (M1 or newer): the -arm64.dmg
-          - Mac with an Intel chip: the -x64.dmg
-
-          The Mac app isn't notarized by Apple. The first time, right-click the app and choose Open (see the README).
-          Built from ${GITHUB_SHA::7}."
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            gh release create "$GITHUB_REF_NAME" out/* --title "Retroville Unleashed $GITHUB_REF_NAME" --notes "$NOTES"
-          else
-            gh release delete latest-build --cleanup-tag --yes || true
-            gh release create latest-build out/* --prerelease --target "$GITHUB_SHA" \
-              --title "Retroville Unleashed (latest build)" --notes "$NOTES"
-          fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then TAG="$GITHUB_REF_NAME"; TITLE="Retroville Unleashed $GITHUB_REF_NAME"; PRE=""; else TAG="latest-build"; TITLE="Retroville Unleashed (latest build)"; PRE="--prerelease"; fi
+          NOTES=$(printf '%s\n' \
+            "Download the file for your computer:" \
+            "- Linux: the .AppImage (any distro), the .deb (Ubuntu/Debian) or the .tar.gz" \
+            "- Mac with Apple Silicon (M1 or newer): the -mac-arm64.dmg" \
+            "- Mac with an Intel chip: the -mac-x64.dmg" \
+            "" \
+            "The Mac app isn't notarized by Apple. The first time, right-click the app and choose Open (see the README)." \
+            "Built from ${GITHUB_SHA:0:7}.")
+          for i in 1 2 3; do
+            gh release view "$TAG" >/dev/null 2>&1 && break
+            gh release create "$TAG" $PRE --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" && break
+            sleep 5
+          done
+          gh release edit "$TAG" --notes "$NOTES"
+          # replace this platform's files from any earlier build
+          if [[ "$RUNNER_OS" == "macOS" ]]; then PAT='-mac-'; else PAT='-linux-'; fi
+          gh release view "$TAG" --json assets -q '.assets[].name' | { grep -- "$PAT" || true; } | while read -r a; do gh release delete-asset "$TAG" "$a" --yes; done
+          shopt -s nullglob
+          gh release upload "$TAG" --clobber dist/*.AppImage dist/*.deb dist/*.tar.gz dist/*.dmg dist/*.zip
