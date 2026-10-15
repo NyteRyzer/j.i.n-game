@@ -6,7 +6,7 @@ Everything is rendered with [Three.js](https://threejs.org) using cel-shaded, ou
 
 ## Download and play
 
-Desktop versions for **Linux** and **macOS** are built automatically and posted on the [Releases page](https://github.com/deshauncottrell2-jpg/j.i.n-game/releases). The newest build is always under **latest-build**.
+Desktop versions for **Linux** and **macOS** are built automatically and posted on the [Releases page](https://github.com/NyteRyzer/j.i.n-game/releases). The newest build is always under **latest-build**.
 
 | Your computer | Download | How to start it |
 | --- | --- | --- |

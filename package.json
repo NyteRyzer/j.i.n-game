@@ -4,10 +4,10 @@
   "version": "1.1.0",
   "description": "Open-world 3D Jimmy Neutron fan game: roam Retroville with Goddard, inventions, vehicles, missions and bosses.",
   "main": "desktop/main.js",
-  "homepage": "https://github.com/deshauncottrell2-jpg/j.i.n-game",
+  "homepage": "https://github.com/NyteRyzer/j.i.n-game",
   "author": {
-    "name": "deshauncottrell2-jpg",
-    "email": "deshauncottrell2-jpg@users.noreply.github.com"
+    "name": "NyteRyzer",
+    "email": "342276244+NyteRyzer@users.noreply.github.com"
   },
   "license": "UNLICENSED",
   "private": true,
@@ -21,7 +21,7 @@
     "electron-builder": "24.13.3"
   },
   "build": {
-    "appId": "io.github.deshauncottrell2jpg.retrovilleunleashed",
+    "appId": "io.github.nyteryzer.retrovilleunleashed",
     "productName": "Retroville Unleashed",
     "artifactName": "Retroville-Unleashed-${version}-${os}-${arch}.${ext}",
     "directories": {
