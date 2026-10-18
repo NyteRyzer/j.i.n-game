@@ -175,7 +175,7 @@ const UI = {
       <div><kbd>Shift</kbd> Sprint / vehicle boost</div><div><kbd>E</kbd> Talk · enter · use · get in/out</div>
       <div><kbd>G</kbd> Goddard: follow / attack / stay</div><div><kbd>V</kbd> Ride the Goddard Bike</div>
       <div><kbd>Q</kbd> Mission log</div><div><kbd>M</kbd> Town map</div>
-      <div><kbd>C</kbd> Third-person / overhead camera</div><div><kbd>Z</kbd> Zoom (overhead view)</div>
+      <div><kbd>C</kbd> Third-person / overhead camera</div><div><kbd>Z</kbd> Camera zoom</div>
       <div><kbd>Esc</kbd> Pause</div><div><kbd>N</kbd> Mute sound</div>
       <div><kbd>F11</kbd> Fullscreen</div><div><kbd>F3</kbd> Frame-rate counter</div>
     </div>
@@ -431,7 +431,7 @@ function drawHUD(ctx, W, H) {
   if (!UI.isOpen()) {
     const chase = R3.cam.mode === 'chase';
     const padAim = Input.usingPad && !chase;
-    const { x, y } = chase || padAim ? R3.worldToScreen(Input.worldMouse.x, Input.worldMouse.y, 0.95 + (p.alt || 0) * 0.095) : G.input.mouse;
+    const { x, y } = chase ? { x: W / 2, y: H / 2 } : padAim ? R3.worldToScreen(Input.worldMouse.x, Input.worldMouse.y, 0.95 + (p.alt || 0) * 0.095) : G.input.mouse;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.moveTo(x - 14, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 14); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 14); ctx.stroke();
     ctx.fillStyle = INVENTIONS[p.invIndex].color; ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill();

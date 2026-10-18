@@ -72,29 +72,38 @@ function signMesh(text, height, opts) {
 // ---------------------------------------------------------------------------
 // People
 // ---------------------------------------------------------------------------
-function jimmySwirlGeometry(r) {
-  // The famous soft-serve swirl: a lathe that tapers to a forward-curling tip.
-  return geo('swirl' + r, () => {
-    const prof = [[0.86, 0], [0.9, 0.16], [0.84, 0.38], [0.68, 0.62], [0.5, 0.86], [0.32, 1.06], [0.16, 1.2], [0.04, 1.28], [0, 1.3]];
-    return new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x * r, y * r)), 28);
-  });
-}
-function jimmySwirlGroove(r) {
-  return geo('groove' + r, () => {
-    const prof = (h) => { // radius of the lathe at height h (0..1.3)
-      const P = [[0, 0.86], [0.16, 0.9], [0.38, 0.84], [0.62, 0.68], [0.86, 0.5], [1.06, 0.32], [1.2, 0.16], [1.28, 0.04]];
-      for (let i = 1; i < P.length; i++) if (h <= P[i][0]) { const t = (h - P[i - 1][0]) / (P[i][0] - P[i - 1][0]); return lerp(P[i - 1][1], P[i][1], t); }
-      return 0.02;
-    };
-    const pts = [];
-    for (let i = 0; i <= 160; i++) {
-      const t = i / 160, h = 0.08 + t * 1.15, a = t * Math.PI * 2 * 3.6;
-      const rr = prof(h) * 1.01;
-      pts.push(new THREE.Vector3(Math.cos(a) * rr * r, h * r, Math.sin(a) * rr * r));
+// A closed, tapered tube along a curve (hair locks, Jimmy's swoop). Points and radii are in
+// units of r; the geometry is centred on its bounding box so the ink hull lines up.
+function taperTube(key, pts, radii, r, seg = 48, rad = 14) {
+  return geo(key + r, () => {
+    const curve = new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => new THREE.Vector3(x * r, y * r, z * r)));
+    const fr = curve.computeFrenetFrames(seg, false);
+    const radiusAt = (u) => { const f = u * (radii.length - 1), i = Math.min(radii.length - 2, Math.floor(f)); return lerp(radii[i], radii[i + 1], f - i) * r; };
+    const pos = [], idx = [];
+    for (let i = 0; i <= seg; i++) {
+      const u = i / seg, P = curve.getPointAt(u), rr = Math.max(1e-4, radiusAt(u));
+      for (let j = 0; j <= rad; j++) {
+        const a = (j / rad) * Math.PI * 2, N = fr.normals[i], B = fr.binormals[i];
+        pos.push(P.x + (N.x * Math.cos(a) + B.x * Math.sin(a)) * rr, P.y + (N.y * Math.cos(a) + B.y * Math.sin(a)) * rr, P.z + (N.z * Math.cos(a) + B.z * Math.sin(a)) * rr);
+      }
     }
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 220, r * 0.05, 6, false);
+    for (let i = 0; i < seg; i++) for (let j = 0; j < rad; j++) {
+      const a = i * (rad + 1) + j, b = a + rad + 1;
+      idx.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    for (const [ring, flip] of [[0, true], [seg, false]]) { // caps
+      const c = pos.length / 3, P = curve.getPointAt(ring / seg); pos.push(P.x, P.y, P.z);
+      for (let j = 0; j < rad; j++) { const a = ring * (rad + 1) + j; flip ? idx.push(c, a, a + 1) : idx.push(c, a + 1, a); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    g.computeVertexNormals(); g.computeBoundingBox();
+    const c = new THREE.Vector3(); g.boundingBox.getCenter(c); g.translate(-c.x, -c.y, -c.z);
+    g.userData.center = c;
+    return g;
   });
 }
+const tubeMesh = (g, mat, opts) => { const m = mesh(g, mat, null, null, opts); m.position.copy(g.userData.center); return m; };
 
 // Rounded limb: a capsule hanging down from its top joint (origin = top joint centre).
 function limbGeo(rTop, rBot, len) {
@@ -122,9 +131,9 @@ const BROWS = { neutral: [0, 0], up: [0.18, 0.06], angry: [-0.45, -0.04], worrie
 function makeCharacter(L) {
   const kid = L.kid !== undefined ? L.kid : (L.height || 1) < 1.25;
   const h = L.height || 1, w = L.wide || 1;
-  const thigh = 0.16 * h, shin = 0.15 * h, legLen = thigh + shin + 0.05;
-  const torsoLen = (kid ? 0.3 : 0.34) * h;
-  const hr = kid ? 0.25 : 0.19 + 0.01 * (h - 1.3);
+  const thigh = (kid ? 0.145 : 0.17) * h, shin = (kid ? 0.14 : 0.16) * h, legLen = thigh + shin + 0.06;
+  const torsoLen = (kid ? 0.26 : 0.33) * h;
+  const hr = kid ? 0.3 * Math.min(1.08, h) : 0.2 + 0.01 * (h - 1.3);
   const ink = 0.06;
   const skin = toon(L.skin), shirt = toon(L.shirt), pants = toon(L.pants), hairM = toon(L.hair);
   const shoeM = toon(L.shoes || (kid ? '#f4f4f4' : '#3a3036')), sole = toon('#f2f2f2');
@@ -135,7 +144,8 @@ function makeCharacter(L) {
   const parts = { root, body, kid, blinkT: 1 + Math.random() * 3, eyes: [] };
 
   // --- legs: hip -> knee -> sneaker -------------------------------------
-  const legR = 0.062 * Math.sqrt(w);
+  const legR = (kid ? 0.048 : 0.058) * Math.sqrt(w);
+  const cuffM = toon(shade(L.pants, -22)), white = toon('#ffffff');
   const mkLeg = (side) => {
     const hip = new THREE.Group(); hip.position.set(side * 0.085 * w, legLen, 0);
     hip.add(mesh(limbGeo(legR * 1.15, legR, thigh), L.dress ? skin : pants, null, null, { ink: 0.08 }));
@@ -144,8 +154,12 @@ function makeCharacter(L) {
     knee.add(mesh(limbGeo(legR, legR * 0.85, shin), shinM, null, null, { ink: 0.08 }));
     if (L.capri) knee.add(mesh(limbGeo(legR * 1.05, legR * 1.02, shin * 0.35), pants, null, null));
     const foot = new THREE.Group(); foot.position.y = -shin; knee.add(foot);
-    foot.add(mesh(G_SPHERE(14, 10), shoeM, [0, -0.015, 0.035], [0.07 * Math.sqrt(w), 0.05, 0.11], { ink: 0.1 }));
-    foot.add(box(sole, 0, -0.05, 0.035, 0.13 * Math.sqrt(w), 0.025, 0.22, { shadow: false }));
+    if (!L.dress && !L.capri) knee.add(mesh(G_CYL(16), cuffM, [0, -shin + 0.035, 0], [legR * 1.25, 0.03, legR * 1.25])); // jean cuff
+    const fs = kid ? 1.15 : 1;
+    foot.add(mesh(G_SPHERE(18, 12), shoeM, [0, -0.012, 0.04 * fs], [0.072 * fs * Math.sqrt(w), 0.055 * fs, 0.12 * fs], { ink: 0.09 }));
+    foot.add(mesh(G_SPHERE(14, 10), kid ? white : shoeM, [0, -0.025, 0.11 * fs], [0.06 * fs, 0.04 * fs, 0.06 * fs], { shadow: false })); // toe cap
+    foot.add(mesh(G_CYL(18), sole, [0, -0.05, 0.04 * fs], [0.078 * fs * Math.sqrt(w), 0.026, 0.13 * fs], { shadow: false }));
+    if (kid) for (let k = 0; k < 3; k++) foot.add(box(toon(shade(L.shoes || '#f4f4f4', -60)), 0, 0.03 * fs - k * 0.004, (0.045 + k * 0.022) * fs, 0.05 * fs, 0.008, 0.008, { shadow: false })); // laces
     body.add(hip);
     return { hip, knee };
   };
@@ -159,6 +173,8 @@ function makeCharacter(L) {
   const torso = mesh(torsoGeo(L.belly), shirt, [0, torsoY, 0], [tw, torsoLen, td], { ink });
   torso.userData.baseY = torsoLen;
   body.add(torso); parts.torso = torso;
+  if (!L.dress) body.add(mesh(G_CYL(20), toon(shade(L.pants, -35)), [0, torsoY + 0.012, 0], [tw * 0.86, 0.028, td * 0.86])); // waistband
+  body.add(mesh(geo('neckline', () => new THREE.TorusGeometry(1, 0.22, 6, 20)), toon(shade(L.shirt, -18)), [0, torsoY + torsoLen * 0.985, 0], [tw * 0.42, td * 0.42, 0.06], { rot: [Math.PI / 2, 0, 0], shadow: false }));
   if (L.dress) body.add(mesh(skirtGeo(), shirt, [0, legLen + 0.06, 0], [0.27 * w * (kid ? 0.9 : 1), legLen * 0.62, 0.22 * w], { ink: 0.03 }));
   if (L.vest) body.add(mesh(torsoGeo(L.belly), toon(L.vest), [0, torsoY + torsoLen * 0.05, 0], [tw * 1.04, torsoLen * 0.82, td * 1.05]));
   if (L.jacket) {
@@ -190,16 +206,21 @@ function makeCharacter(L) {
   }
 
   // --- arms: shoulder -> elbow -> mitten hand ------------------------------
-  const armR = 0.045 * Math.sqrt(w), upper = 0.13 * h * (kid ? 1 : 1.05), fore = 0.12 * h * (kid ? 1 : 1.05);
+  const armR = (kid ? 0.034 : 0.042) * Math.sqrt(w), upper = (kid ? 0.125 : 0.14) * h, fore = (kid ? 0.115 : 0.13) * h;
   const mkArm = (side) => {
     const sh = new THREE.Group(); sh.position.set(side * (tw + armR * 0.6), torsoY + torsoLen * 0.86, 0); sh.rotation.z = side * 0.12;
     sh.add(mesh(limbGeo(armR * 1.25, armR * 1.1, upper * (L.longSleeves || L.jacket ? 1 : 0.45)), sleeveM, null, null, { ink: 0.08 }));
-    if (!(L.longSleeves || L.jacket)) sh.add(mesh(limbGeo(armR, armR * 0.95, upper), skin, null, null, { ink: 0.08 }));
+    if (!(L.longSleeves || L.jacket)) {
+      sh.add(mesh(limbGeo(armR, armR * 0.95, upper), skin, null, null, { ink: 0.08 }));
+      sh.add(mesh(G_CYL(14), toon(shade(L.shirt, -15)), [0, -upper * 0.45, 0], [armR * 1.32, 0.025, armR * 1.32], { shadow: false })); // sleeve hem
+    }
     const el = new THREE.Group(); el.position.y = -upper; el.rotation.x = -0.25; sh.add(el);
     el.add(mesh(limbGeo(armR * 0.95, armR * 0.85, fore), L.longSleeves || L.jacket ? sleeveM : skin, null, null, { ink: 0.08 }));
     const hand = new THREE.Group(); hand.position.y = -fore - 0.02; el.add(hand);
-    hand.add(mesh(G_SPHERE(12, 8), skin, [0, -0.02, 0], [0.05, 0.06, 0.04], { ink: 0.12 }));
-    hand.add(mesh(G_SPHERE(8, 6), skin, [-side * 0.035, 0.0, 0.02], [0.018, 0.03, 0.018]));
+    const hs = kid ? 0.85 : 1;
+    hand.add(mesh(G_SPHERE(14, 10), skin, [0, -0.015 * hs, 0], [0.042 * hs, 0.045 * hs, 0.032 * hs], { ink: 0.12 }));
+    for (let k = 0; k < 3; k++) hand.add(mesh(limbGeo(0.011 * hs, 0.01 * hs, 0.03 * hs), skin, [(k - 1) * 0.022 * hs, -0.045 * hs, 0.004], null, { ink: 0.15 }));
+    hand.add(mesh(limbGeo(0.011 * hs, 0.01 * hs, 0.026 * hs), skin, [-side * 0.036 * hs, -0.01 * hs, 0.012], null, { rot: [0, 0, side * 0.9], ink: 0.15 })); // thumb
     body.add(sh);
     return { sh, el, hand };
   };
@@ -213,17 +234,20 @@ function makeCharacter(L) {
   const head = new THREE.Group(); head.position.set(0, neckY + hr * 0.95, 0.01);
   body.add(head); parts.head = head;
   const hy = kid ? 1 : 1.1; // adults have longer faces
-  head.add(mesh(G_SPHERE(24, 18), skin, [0, 0, 0], [hr, hr * hy, hr * 0.97], { ink }));
+  head.add(mesh(G_SPHERE(32, 24), skin, [0, 0, 0], [hr, hr * hy, hr * 0.97], { ink }));
+  if (L.blush || L.lipstick || L.hairStyle === 'ponytail' || L.hairStyle === 'headband') for (const s of [-1, 1]) head.add(mesh(G_SPHERE(10, 8), basic('#ff9ab0', { transparent: true, opacity: 0.45 }), [s * hr * 0.55, -hr * 0.2, hr * 0.74], [hr * 0.14, hr * 0.08, hr * 0.05], { shadow: false }));
   for (const s of [-1, 1]) head.add(mesh(G_SPHERE(10, 8), skin, [s * hr * 0.97, -hr * 0.05, -hr * 0.05], [hr * 0.13, hr * 0.22, hr * 0.15], { ink: 0.12 }));
   // a point on the face surface at (x, y) — features sit on it instead of floating
   const faceZ = (x, y) => hr * 0.97 * Math.sqrt(Math.max(0, 1 - (x / hr) ** 2 - (y / (hr * hy)) ** 2));
-  const eyeR = kid ? hr * 0.33 : hr * 0.26, ex = hr * (kid ? 0.37 : 0.36), ey = hr * 0.12;
-  const white = toon('#ffffff'), black = basic('#15121f');
+  const eyeR = kid ? hr * 0.3 : hr * 0.26, ex = hr * (kid ? 0.3 : 0.36), ey = hr * 0.08;
+  const black = basic('#15121f');
+  const girl = L.lipstick || L.dress || L.hairStyle === 'ponytail' || L.hairStyle === 'headband' || L.lashes;
   for (const s of [-1, 1]) {
     const eg = new THREE.Group(); eg.position.set(s * ex, ey, faceZ(ex, ey) - eyeR * 0.25); head.add(eg);
-    eg.add(mesh(G_SPHERE(16, 12), white, [0, 0, 0], [eyeR * 0.82, eyeR * 1.05, eyeR * 0.5], { ink: 0.1 }));
-    eg.add(ball(black, -s * eyeR * 0.08, -eyeR * 0.05, eyeR * 0.38, eyeR * 0.36, { shadow: false }));
-    eg.add(ball(basic('#ffffff'), -s * eyeR * 0.08 + eyeR * 0.14, eyeR * 0.15, eyeR * 0.55, eyeR * 0.1, { shadow: false }));
+    eg.add(mesh(G_SPHERE(20, 16), white, [0, 0, 0], [eyeR * 0.8, eyeR * 1.12, eyeR * 0.5], { ink: 0.1 }));
+    eg.add(ball(black, -s * eyeR * 0.1, -eyeR * 0.05, eyeR * 0.4, eyeR * 0.27, { shadow: false }));
+    eg.add(ball(basic('#ffffff'), -s * eyeR * 0.1 + eyeR * 0.1, eyeR * 0.08, eyeR * 0.6, eyeR * 0.08, { shadow: false }));
+    if (girl) for (let k = 0; k < 3; k++) eg.add(mesh(G_CONE(5), black, [s * eyeR * (0.35 + k * 0.2), eyeR * (1.0 - k * 0.12), eyeR * 0.2], [eyeR * 0.07, eyeR * 0.35, eyeR * 0.07], { rot: [0, 0, -s * (0.5 + k * 0.35)], shadow: false }));
     parts.eyes.push(eg);
     // eyebrow
     const [tilt, lift] = BROWS[L.brows || 'neutral'] || BROWS.neutral;
@@ -258,16 +282,22 @@ function makeCharacter(L) {
 
   // --- hair: closed shapes only (open shells leak their outlines across faces)
   // The "helmet" is a full sphere pushed up and back; the face pokes out of its front.
-  const helmet = (r = 1.0, up = 0.2, back = 0.28, sx = 1.05) => mesh(G_SPHERE(22, 16), hairM, [0, hr * up * hy, -hr * back], [hr * r * sx, hr * r * hy, hr * r * 1.02], { ink });
+  const kc = 1;
+  const helmet = (r = 1.0, up = 0.2, back = 0.28, sx = 1.05) => mesh(G_SPHERE(28, 20), hairM, [0, hr * up * hy, -hr * back], [hr * r * sx * kc, hr * r * hy * kc, hr * r * 1.02 * kc], { ink });
   switch (L.hairStyle) {
     case 'jimmy': {
-      head.add(helmet(1.0, 0.24, 0.3));
-      const swirl = new THREE.Group(); swirl.position.set(0, hr * 0.5, -hr * 0.08); swirl.rotation.x = 0.28;
-      swirl.add(mesh(jimmySwirlGeometry(hr), hairM, [0, 0, 0], 1, { ink: 0.04 }));
-      swirl.add(mesh(jimmySwirlGroove(hr), toon(shade(L.hair, -28)), [0, 0, 0], 1, { shadow: false }));
-      swirl.add(mesh(geo('curl', () => new THREE.TorusGeometry(1, 0.42, 8, 16, Math.PI * 1.3)), hairM, [0, hr * 1.24, hr * 0.12], hr * 0.16, { rot: [0, Math.PI / 2, 0.4], ink: 0.12 }));
-      head.add(swirl);
-      head.add(mesh(G_CONE(), hairM, [hr * 0.1, hr * 0.66, hr * 0.68], [hr * 0.22, hr * 0.5, hr * 0.15], { rot: [1.1, 0, -0.4], ink: 0.1 }));
+      // Smooth brown cap over the big cranium, then the famous swoop: it rises off the forehead,
+      // crests forward like a wave and curls back into a soft-serve tip.
+      head.add(mesh(G_SPHERE(32, 24), hairM, [0, hr * 0.3, -hr * 0.16], [hr * 1.06, hr * 0.98, hr * 0.98], { ink }));
+      head.add(mesh(G_SPHERE(24, 18), hairM, [0, hr * 0.78, hr * 0.12], [hr * 0.78, hr * 0.5, hr * 0.78], { ink: 0.04 }));
+      const swoop = taperTube('jswoop', [[0, 0.62, 0.5], [0, 1.0, 0.74], [0, 1.38, 0.72], [0, 1.66, 0.42], [0, 1.7, 0.06], [0, 1.52, -0.08], [0, 1.4, 0.12], [0, 1.47, 0.28]], [0.5, 0.44, 0.36, 0.27, 0.19, 0.12, 0.07, 0.02], hr);
+      const sw = tubeMesh(swoop, hairM, { ink: 0.04 }); sw.scale.set(2.05, 0.86, 1); sw.position.y *= 0.9; head.add(sw); // wide as the head, like the show
+      // the swirl line that gives it the ice-cream look, only on the front of the crest
+      const line = taperTube('jline', [[0.05, 0.85, 0.98], [0.02, 1.25, 1.02], [0, 1.6, 0.74], [0, 1.82, 0.35], [0, 1.78, 0.02]], [0.035, 0.035, 0.03, 0.025, 0.01], hr);
+      const ln = tubeMesh(line, toon(shade(L.hair, -32)), { shadow: false }); ln.scale.set(2.05, 0.86, 1); ln.position.y *= 0.9; head.add(ln);
+      // sideburn tufts and back fringe
+      for (const sd of [-1, 1]) head.add(mesh(G_CONE(8), hairM, [sd * hr * 0.88, -hr * 0.05, -hr * 0.12], [hr * 0.16, hr * 0.42, hr * 0.22], { rot: [0, 0, sd * 0.15 + Math.PI], ink: 0.1 }));
+      for (let k = -2; k <= 2; k++) head.add(mesh(G_CONE(8), hairM, [k * hr * 0.28, -hr * 0.18, -hr * 0.92], [hr * 0.17, hr * 0.32, hr * 0.15], { rot: [-0.35, 0, Math.PI + k * 0.12], ink: 0.1 }));
       break;
     }
     case 'spiky':
@@ -325,39 +355,63 @@ function makeCharacter(L) {
       break;
     default: head.add(helmet());
   }
-  parts.height = neckY + hr * 2 * hy + (L.hairStyle === 'beehive' ? hr * 2.4 : L.hairStyle === 'jimmy' ? hr * 1.5 : L.hairStyle === 'spiky' ? hr * 0.6 : 0.05);
+  parts.height = neckY + hr * 2 * hy + (L.hairStyle === 'beehive' ? hr * 2.4 : L.hairStyle === 'jimmy' ? hr * 1.9 : L.hairStyle === 'spiky' ? hr * 0.6 : 0.05);
   return parts;
 }
 
 // Walk cycle with knees and elbows, idle breathing, blinking and an optional wave.
-function animateCharacter(c, phase, moving, dt) {
-  const k = Math.min(1, dt * 14);
-  const amp = moving ? 0.7 : 0;
-  const s = Math.sin(phase) * amp;
-  c.legL.rotation.x = lerp(c.legL.rotation.x, s, k);
-  c.legR.rotation.x = lerp(c.legR.rotation.x, -s, k);
-  if (c.kneeL) {
-    c.kneeL.rotation.x = lerp(c.kneeL.rotation.x, moving ? Math.max(0, -Math.sin(phase)) * 1.0 + 0.05 : 0, k);
-    c.kneeR.rotation.x = lerp(c.kneeR.rotation.x, moving ? Math.max(0, Math.sin(phase)) * 1.0 + 0.05 : 0, k);
+// o: { run, air, aim } — run = sprinting, air = flying with the jetpack, aim = holding the gadget up
+function animateCharacter(c, phase, moving, dt, o = {}) {
+  const k = Math.min(1, dt * 14), L = (obj, prop, v, kk = k) => { obj[prop] = lerp(obj[prop], v, kk); };
+  const t = performance.now() / 1000, seed = c.blinkT0 || (c.blinkT0 = Math.random() * 10);
+  const run = moving && o.run, air = !!o.air;
+  const sw = Math.sin(phase), cw = Math.cos(phase);
+  const legAmp = !moving || air ? 0 : run ? 0.95 : 0.6;
+  // legs: swing from the hip, bend the knee on the back-swing and while the foot passes under
+  if (air) {
+    L(c.legL.rotation, 'x', -0.55); L(c.legR.rotation, 'x', 0.25);
+    if (c.kneeL) { L(c.kneeL.rotation, 'x', 1.1); L(c.kneeR.rotation, 'x', 0.55); }
+  } else {
+    L(c.legL.rotation, 'x', sw * legAmp); L(c.legR.rotation, 'x', -sw * legAmp);
+    if (c.kneeL) {
+      const bend = run ? 1.5 : 0.9;
+      L(c.kneeL.rotation, 'x', moving ? Math.max(0, -cw) * bend * (sw > 0 ? 1 : 0.35) + 0.08 : 0.02);
+      L(c.kneeR.rotation, 'x', moving ? Math.max(0, cw) * bend * (sw < 0 ? 1 : 0.35) + 0.08 : 0.02);
+    }
   }
-  c.armL.rotation.x = lerp(c.armL.rotation.x, -s * 0.8, k);
-  if (c.elbowL) c.elbowL.rotation.x = lerp(c.elbowL.rotation.x, moving ? -0.5 - Math.abs(s) * 0.4 : -0.2, k);
+  // arms swing against the legs; running pumps them with bent elbows
+  const armAmp = !moving ? 0 : run ? 1.1 : 0.55, elbow = run ? -1.35 : moving ? -0.45 : -0.18;
+  const idleSway = moving ? 0 : Math.sin(t * 1.3 + seed) * 0.04;
+  if (air) { L(c.armL.rotation, 'x', -0.3); L(c.armL.rotation, 'z', -0.9); if (c.elbowL) L(c.elbowL.rotation, 'x', -0.5); }
+  else {
+    L(c.armL.rotation, 'x', -sw * armAmp + idleSway); L(c.armL.rotation, 'z', -0.1);
+    if (c.elbowL) L(c.elbowL.rotation, 'x', elbow - (moving ? Math.max(0, sw) * 0.4 : 0));
+  }
   if (c.wave > 0) {
     c.wave -= dt;
-    c.armR.rotation.x = lerp(c.armR.rotation.x, 0, k);
-    c.armR.rotation.z = lerp(c.armR.rotation.z, 2.5 + Math.sin(c.wave * 14) * 0.25, k);
-    if (c.elbowR) c.elbowR.rotation.x = lerp(c.elbowR.rotation.x, -0.3, k);
-  } else {
-    c.armR.rotation.z = lerp(c.armR.rotation.z, 0.12, k);
-    if (!c.aiming) {
-      c.armR.rotation.x = lerp(c.armR.rotation.x, s * 0.8, k);
-      if (c.elbowR) c.elbowR.rotation.x = lerp(c.elbowR.rotation.x, moving ? -0.5 - Math.abs(s) * 0.4 : -0.2, k);
-    } else if (c.elbowR) c.elbowR.rotation.x = lerp(c.elbowR.rotation.x, 0, k);
+    L(c.armR.rotation, 'x', 0); L(c.armR.rotation, 'z', 2.5 + Math.sin(c.wave * 14) * 0.25);
+    if (c.elbowR) L(c.elbowR.rotation, 'x', -0.3);
+  } else if (o.aim || (c.aiming && o.aim === undefined)) {
+    L(c.armR.rotation, 'x', -1.45 + (c.recoil || 0) * 0.5, Math.min(1, dt * 18)); L(c.armR.rotation, 'z', 0.05);
+    if (c.elbowR) L(c.elbowR.rotation, 'x', -(c.recoil || 0) * 0.6);
+  } else if (air) { L(c.armR.rotation, 'x', -0.3); L(c.armR.rotation, 'z', 0.9); if (c.elbowR) L(c.elbowR.rotation, 'x', -0.5); }
+  else {
+    L(c.armR.rotation, 'x', sw * armAmp - idleSway); L(c.armR.rotation, 'z', 0.1);
+    if (c.elbowR) L(c.elbowR.rotation, 'x', elbow - (moving ? Math.max(0, -sw) * 0.4 : 0));
   }
-  const t = performance.now() / 1000;
-  c.body.position.y = moving ? Math.abs(Math.cos(phase)) * 0.04 : 0;
-  if (c.torso) c.torso.scale.y = c.torso.userData.baseY * (1 + (moving ? 0 : Math.sin(t * 2 + c.blinkT) * 0.015));
-  c.head.rotation.z = moving ? Math.sin(phase) * 0.04 : Math.sin(t * 0.7 + c.blinkT) * 0.03;
+  c.recoil = Math.max(0, (c.recoil || 0) - dt * 6);
+  // body: bob twice per stride (low when the feet are planted), lean into a run, twist the hips
+  const bob = moving && !air ? (run ? 0.05 : 0.028) : 0;
+  L(c.body.position, 'y', bob * Math.abs(cw) + (air ? Math.sin(t * 6) * 0.02 : 0), Math.min(1, dt * 20));
+  L(c.body.rotation, 'x', air ? 0.25 : run ? 0.2 : moving ? 0.06 : 0);
+  L(c.body.rotation, 'y', moving && !air ? sw * (run ? 0.12 : 0.07) : 0);
+  L(c.body.rotation, 'z', moving ? 0 : Math.sin(t * 0.9 + seed) * 0.02, Math.min(1, dt * 4)); // idle weight shift
+  if (c.torso) c.torso.scale.y = c.torso.userData.baseY * (1 + (moving ? 0 : Math.sin(t * 2 + seed) * 0.018));
+  // head: steadies against the hip twist; idle characters glance around now and then
+  const look = moving ? 0 : Math.sin(t * 0.37 + seed) * Math.sin(t * 0.23 + seed * 2) * 0.55;
+  L(c.head.rotation, 'y', -c.body.rotation.y * 0.8 + look, Math.min(1, dt * 5));
+  L(c.head.rotation, 'x', run ? -0.15 : 0, Math.min(1, dt * 6));
+  c.head.rotation.z = moving ? sw * 0.035 : Math.sin(t * 0.7 + seed) * 0.03;
   // blink
   c.blinkT -= dt;
   const shut = c.blinkT < 0.12 && c.blinkT > 0;

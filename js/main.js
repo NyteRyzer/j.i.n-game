@@ -65,7 +65,7 @@ function moveVector() {
 function inputSnapshot() {
   const mv = moveVector();
   Input.mx = mv.mx; Input.my = mv.my;
-  return { up: Input.up, down: Input.down, left: Input.left, right: Input.right, mx: mv.mx, my: mv.my, sprint: Input.sprint, fire: Input.fire, aim: Input.aim, worldMouse: Input.worldMouse };
+  return { up: Input.up, down: Input.down, left: Input.left, right: Input.right, mx: mv.mx, my: mv.my, sprint: Input.sprint, fire: Input.fire, aim: Input.aim, worldMouse: Input.worldMouse, chase: R3.cam.mode === 'chase' };
 }
 
 // Controller buttons (see Pad in settings.js)
@@ -149,7 +149,7 @@ function setupInput(canvas) {
     if (R3.cam.mode === 'chase' && G.started && !UI.isOpen() && (document.pointerLockElement === canvas || e.buttons & 2)) {
       const sens = Settings.data.sensitivity, inv = Settings.data.invertY ? -1 : 1;
       R3.cam.yaw += e.movementX * 0.0032 * sens;
-      R3.cam.pitch = clamp(R3.cam.pitch + e.movementY * 0.0025 * sens * inv, 0.08, 1.15);
+      R3.cam.pitch = clamp(R3.cam.pitch + e.movementY * 0.0025 * sens * inv, -0.35, 1.1);
       R3.cam.lastMouse = G.time;
     }
   });
@@ -443,7 +443,7 @@ function update(dt) {
     const sens = Settings.data.sensitivity;
     if (R3.cam.mode === 'chase') {
       R3.cam.yaw += Pad.ax * dt * 2.6 * sens;
-      R3.cam.pitch = clamp(R3.cam.pitch + Pad.ay * dt * 1.6 * sens * (Settings.data.invertY ? -1 : 1), 0.08, 1.15);
+      R3.cam.pitch = clamp(R3.cam.pitch + Pad.ay * dt * 1.6 * sens * (Settings.data.invertY ? -1 : 1), -0.35, 1.1);
       R3.cam.lastMouse = G.time;
     } else Input.padAim = Math.atan2(Pad.ay, Pad.ax);
   } else if (Input.usingPad && (Pad.mx || Pad.my) && !G.player.vehicle) Input.padAim = Math.atan2(Pad.my, Pad.mx);
@@ -453,8 +453,10 @@ function update(dt) {
   const m = G.map, p = G.player;
 
   if (R3.cam.mode === 'chase') {
-    Input.aim = R3.cam.yaw;
-    Input.worldMouse = { x: p.x + Math.cos(R3.cam.yaw) * 300, y: p.y + Math.sin(R3.cam.yaw) * 300 };
+    // aim at whatever is under the centre crosshair
+    const t = R3.mouseWorld(R3.W / 2, R3.H / 2), d = Math.hypot(t.x - p.x, t.y - p.y);
+    Input.worldMouse = d > 40 && d < 900 ? t : { x: p.x + Math.cos(R3.cam.yaw) * 400, y: p.y + Math.sin(R3.cam.yaw) * 400 };
+    Input.aim = Math.atan2(Input.worldMouse.y - p.y, Input.worldMouse.x - p.x);
   } else if (Input.usingPad) {
     Input.aim = Input.padAim === undefined ? p.facing : Input.padAim;
     Input.worldMouse = { x: p.x + Math.cos(Input.aim) * 260, y: p.y + Math.sin(Input.aim) * 260 };

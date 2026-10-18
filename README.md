@@ -46,7 +46,7 @@ Play with keyboard and mouse, or a controller (Xbox, PlayStation or Switch Pro).
 | `W A S D` / arrows | Move, or drive a vehicle |
 | Mouse | Look around and aim (click the game once to capture the mouse; `Esc` frees it) |
 | `C` | Switch between the third-person camera (default) and the overhead view |
-| `Z` | Zoom the overhead camera |
+| `Z` | Zoom the camera in or out |
 | Click / `Space` | Use the selected invention, or fire the vehicle weapon |
 | `1`–`8` / mouse wheel | Choose an invention |
 | `Shift` | Sprint, or vehicle boost |

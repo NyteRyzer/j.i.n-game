@@ -286,7 +286,11 @@ class Player extends Entity {
       this.walkPhase += dt * (input.sprint ? 16 : 11);
     }
     this.applyKnock(m, dt);
-    this.facing = input.aim;
+    // Third-person: Jimmy turns to face where he's walking, and snaps to the aim while shooting.
+    this.aimHold = input.fire ? 0.8 : Math.max(0, (this.aimHold || 0) - dt);
+    this.sprinting = this.moving && input.sprint && !this.jetpack;
+    if (!input.chase || this.aimHold > 0) this.facing = input.aim;
+    else if (this.moving) this.facing += angleDiff(this.facing, Math.atan2(iy, ix)) * Math.min(1, dt * 12);
 
     // Stomp shrunken enemies by walking over them
     if (!this.jetpack) for (const e of m.entities) {
@@ -351,8 +355,9 @@ class Goddard extends Entity {
       const a = angleTo(target, this) + Math.sin(G.time * 1.3) * 0.8;
       gx = target.x + Math.cos(a) * 110; gy = target.y + Math.sin(a) * 110;
     } else {
-      const fa = p.vehicle ? p.vehicle.angle : p.facing;
-      gx = p.x + Math.cos(fa + 2.2) * 36 + Math.cos(G.time) * 6; gy = p.y + Math.sin(fa + 2.2) * 36; // trail behind-left, out of the camera's way
+      // trail at Jimmy's left: the third-person camera looks over his right shoulder
+      const fa = p.vehicle ? p.vehicle.angle : R3.cam.mode === 'chase' ? R3.cam.yaw : p.facing;
+      gx = p.x + Math.cos(fa - 1.75) * 40 + Math.cos(G.time) * 6; gy = p.y + Math.sin(fa - 1.75) * 40;
     }
     const d = distXY(this.x, this.y, gx, gy);
     if (d > 6) {
@@ -451,6 +456,7 @@ class NPC extends Entity {
     if (dist(this, p) < 70 && !p.vehicle) { this.facing = angleTo(this, p); this.moving = false; return; }
     // flee from nearby enemies
     const threat = nearest(this, enemyTargets(m), 140);
+    this.fleeing = !!threat;
     if (threat) {
       const a = angleTo(threat, this);
       moveWithCollision(m, this, Math.cos(a) * 110 * dt, Math.sin(a) * 110 * dt);

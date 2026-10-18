@@ -36,7 +36,19 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Package
-        run: npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" != --mac ]]; then npx electron-builder ${{ matrix.target }} --publish never; exit; fi
+          # The .zip builds are reliable; the .dmg step can hit a macOS disk-image
+          # race when two run at once, so build each .dmg on its own and retry.
+          npx electron-builder --mac zip --arm64 --x64 --publish never
+          for arch in arm64 x64; do
+            for try in 1 2 3; do
+              npx electron-builder --mac dmg --$arch --publish never && break
+              echo "dmg build for $arch failed (attempt $try)"; sleep 10
+            done
+          done
+          ls dist/*.zip
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4

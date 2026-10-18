@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 const R3 = {
-  cam: { mode: 'chase', zoom: 1, yaw: -Math.PI / 2, pitch: 0.32, lastMouse: -10 },
+  cam: { mode: 'chase', zoom: 1, yaw: -Math.PI / 2, pitch: 0.18, lastMouse: -10, dist: 4 },
   reg: new Map(),
   projMeshes: new Map(),
   ringPool: [], ballPool: [], gatePool: [],
@@ -81,7 +81,10 @@ const R3 = {
       const mats = [];
       g.traverse((o) => { if (o.isMesh && o.material !== WINDOW_MAT) { o.material = o.material.clone(); o.material.userData.wasTransparent = o.material.transparent; o.material.userData.baseOpacity = o.material.opacity; mats.push(o.material); } });
       this.groups.town.add(g);
-      this.buildings.push({ b, g, mats, fade: 1 });
+      // solid box the third-person camera can't enter: the footprint up to the roof
+      const top = new THREE.Box3().setFromObject(g).max.y;
+      const box = new THREE.Box3(new THREE.Vector3(b.x - 0.2, -1, b.y - 0.2), new THREE.Vector3(b.x + b.w + 0.2, top + 0.2, b.y + b.h + 0.2));
+      this.buildings.push({ b, g, mats, fade: 1, box });
     }
     this.buildGround(lab, this.groups.lab, 32);
     this.buildLab(lab);
@@ -379,7 +382,7 @@ const R3 = {
 
   updateModel(e, rec, dt) {
     const md = rec.model, root = md.root;
-    root.visible = true;
+    root.visible = !(e === G.player && this.hidePlayer && this.cam.mode === 'chase');
     root.position.set(e.x / TILE, 0, e.y / TILE);
     if (e !== G.player && !(e instanceof Vehicle) && !e.boss && G.started) {
       const cp = this.camera.position, dx = cp.x - root.position.x, dz = cp.z - root.position.z;
@@ -395,11 +398,13 @@ const R3 = {
       root.visible = !e.vehicle && !blink;
       root.position.y = e.alt * 0.095;
       face(e.facing);
-      animateCharacter(md, e.walkPhase, e.moving && !e.jetpack, dt);
-      md.armR.rotation.x = lerp(md.armR.rotation.x, -1.45, Math.min(1, dt * 12));
+      // overhead view keeps the gadget up (twin-stick aiming); third-person raises it to shoot
+      const aim = this.cam.mode !== 'chase' || e.aimHold > 0;
+      if (Input.fire && Math.random() < dt * 8) md.recoil = 1;
+      animateCharacter(md, e.walkPhase, e.moving && !e.dash, dt, { run: e.sprinting, air: e.jetpack, aim });
       md.gadgetTip.material = basic(INVENTIONS[e.invIndex].color);
       md.jet.visible = e.jetpack;
-      if (e.jetpack) { md.legL.rotation.x = 0.2; md.legR.rotation.x = 0.1; md.jet.children.forEach((c, i) => { if (i % 2) c.scale.y = 0.2 + Math.random() * 0.25; }); }
+      if (e.jetpack) md.jet.children.forEach((c, i) => { if (i % 2) c.scale.y = 0.2 + Math.random() * 0.25; });
       return;
     }
     if (e instanceof Goddard) {
@@ -420,7 +425,7 @@ const R3 = {
         if (near && !rec.near && !e.moving) md.wave = 1.5;
         rec.near = near;
       }
-      animateCharacter(md, e.walkPhase || 0, e instanceof NPC ? e.moving : rec.moving, dt);
+      animateCharacter(md, e.walkPhase || 0, e instanceof NPC ? e.moving : rec.moving, dt, { run: e instanceof NPC && e.fleeing, aim: e instanceof Clone ? true : false });
       if (e instanceof Clone) root.visible = !(e.life < 2 && Math.floor(G.time * 10) % 2 === 0);
       return;
     }
@@ -541,16 +546,32 @@ const R3 = {
       return;
     }
     if (c.mode === 'chase') {
+      // Over-the-shoulder camera: sits just behind and to the right of Jimmy's head.
+      // Mouse look turns it instantly; only the follow point is smoothed.
       if (p.vehicle && G.time - c.lastMouse > 1.2) c.yaw += angleDiff(c.yaw, p.vehicle.angle) * Math.min(1, dt * 2.5);
-      const d = p.vehicle ? 8 : 5.2;
-      const hgt = 1.2 + Math.sin(c.pitch) * d, hor = Math.cos(c.pitch) * d;
-      const alt = p.vehicle ? p.vehicle.alt * 0.095 : p.alt * 0.095;
-      const want = new THREE.Vector3(f.x - Math.cos(c.yaw) * hor, f.y + alt + hgt, f.z - Math.sin(c.yaw) * hor);
-      this.keepCameraOutOfWalls(new THREE.Vector3(f.x, alt + 1.4, f.z), want);
-      const jump = cam.position.distanceTo(want) > 25;
-      cam.position.lerp(want, snap || jump ? 1 : Math.min(1, dt * 10));
-      const lookAt = new THREE.Vector3(f.x + Math.cos(c.yaw) * 2, alt + 1.3, f.z + Math.sin(c.yaw) * 2);
-      this.look.lerp(lookAt, snap ? 1 : Math.min(1, dt * 12));
+      const veh = p.vehicle;
+      const alt = (veh ? veh.alt : p.alt) * 0.095;
+      const pivot = new THREE.Vector3(f.x, alt + (veh ? 1.6 : 1.45), f.z);
+      if (!this.pivot || snap || this.pivot.distanceTo(pivot) > 6) this.pivot = pivot.clone();
+      else this.pivot.lerp(pivot, Math.min(1, dt * 14));
+      const want = veh ? 7 : [2.8, 4, 5.6][c.zoom] || 4;
+      const side = veh ? 0 : 0.62;
+      const cp = Math.cos(c.pitch), fw = new THREE.Vector3(Math.cos(c.yaw) * cp, -Math.sin(c.pitch), Math.sin(c.yaw) * cp);
+      const right = new THREE.Vector3(-Math.sin(c.yaw), 0, Math.cos(c.yaw));
+      const shoulder = this.pivot.clone().addScaledVector(right, side);
+      const ideal = shoulder.clone().addScaledVector(fw, -want);
+      ideal.y = Math.max(ideal.y, 0.35);
+      // the camera slides along the line from Jimmy's head to its ideal spot: it pulls in
+      // instantly when a building or wall is in the way and eases back out afterwards
+      const toCam = ideal.clone().sub(this.pivot), len = toCam.length();
+      toCam.divideScalar(len);
+      const free = Math.max(0.35, this.cameraRoom(this.pivot, toCam, len) - 0.25) / len;
+      c.frac = c.frac === undefined || snap || free < c.frac ? free : Math.min(free, c.frac + dt * 1.5);
+      c.dist = c.frac * len;
+      cam.position.copy(this.pivot).addScaledVector(toCam, c.dist);
+      this.look.copy(shoulder).addScaledVector(fw, 12);
+      // hide Jimmy if the camera ends up inside him
+      this.hidePlayer = c.dist < 1.5 && !veh;
     } else {
       const z = ([1, 0.68, 1.45][c.zoom] || 1) * (G.map.name === 'lab' ? 0.85 : 1);
       const want = new THREE.Vector3(f.x, 20 * z, f.z + 14.5 * z);
@@ -561,24 +582,31 @@ const R3 = {
     cam.lookAt(this.look);
   },
 
-  // Third-person: pull the camera in front of any building or lab wall between it and Jimmy.
+  // Third-person: distance along a ray from Jimmy's head before a building or lab wall blocks it.
+  cameraRoom(from, dir, want) {
+    let best = want;
+    const m = G.map;
+    if (m.name === 'town' && this.buildings) {
+      const ray = this.tmpRay || (this.tmpRay = new THREE.Ray()), hit = this.tmpHit || (this.tmpHit = new THREE.Vector3());
+      ray.set(from, dir);
+      for (const rec of this.buildings) {
+        if (rec.box.containsPoint(from)) continue; // standing in a doorway
+        if (ray.intersectBox(rec.box, hit)) best = Math.min(best, from.distanceTo(hit));
+      }
+    }
+    const steps = 24;
+    for (let i = 1; i <= steps; i++) {
+      const d = (i / steps) * best;
+      const x = from.x + dir.x * d, y = from.y + dir.y * d, z = from.z + dir.z * d;
+      if (y < this.wallHeight(m, Math.floor(x), Math.floor(z)) + 0.25) return Math.max(0.3, d - best / steps);
+    }
+    return best;
+  },
   wallHeight(m, tx, ty) {
     const t = m.get(tx, ty);
     if (t === T.BUILDING) return 4.3;
     if (t === T.LABWALL) return m.name !== 'lab' ? 99 : ty === m.h - 1 ? 0.3 : ty > 1 && tx > 0 && tx < m.w - 1 ? 1.25 : 2.7;
     return 0;
-  },
-  keepCameraOutOfWalls(from, to) {
-    const m = G.map, steps = 20;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const x = lerp(from.x, to.x, t), y = lerp(from.y, to.y, t), z = lerp(from.z, to.z, t);
-      if (y < this.wallHeight(m, Math.floor(x), Math.floor(z)) + 0.2) {
-        const keep = Math.max(0.12, (i - 1.5) / steps);
-        to.set(lerp(from.x, to.x, keep), lerp(from.y, to.y, keep) + (1 - keep) * 0.8, lerp(from.z, to.z, keep));
-        return;
-      }
-    }
   },
 
   // Map-pixel point under the mouse (ground plane at waist height)
