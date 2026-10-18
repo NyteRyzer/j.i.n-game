@@ -44,8 +44,8 @@ Play with keyboard and mouse, or a controller (Xbox, PlayStation or Switch Pro).
 | Key | Action |
 | --- | --- |
 | `W A S D` / arrows | Move, or drive a vehicle |
-| Mouse | Aim (overhead view) or look around (third-person view) |
-| `C` | Switch between overhead and third-person camera |
+| Mouse | Look around and aim (click the game once to capture the mouse; `Esc` frees it) |
+| `C` | Switch between the third-person camera (default) and the overhead view |
 | `Z` | Zoom the overhead camera |
 | Click / `Space` | Use the selected invention, or fire the vehicle weapon |
 | `1`–`8` / mouse wheel | Choose an invention |
@@ -92,7 +92,7 @@ Play with keyboard and mouse, or a controller (Xbox, PlayStation or Switch Pro).
 
 **Music**: a procedural soundtrack that changes with what's happening: sunny daytime, night, combat, boss fights and the lab.
 
-**Settings**: music and sound volume, mouse and stick sensitivity, graphics quality (High, Medium, Low), difficulty (Easy, Normal, Hard), invert look and a frame-rate counter.
+**Settings**: camera (third-person or overhead), music and sound volume, mouse and stick sensitivity, graphics quality (High, Medium, Low), difficulty (Easy, Normal, Hard), invert look and a frame-rate counter.
 
 **Saving**: the game autosaves every 30 seconds and when you quit: neutronium, upgrades, missions, Golden Atoms, where you are, the time of day and your current story mission.
 

@@ -11,10 +11,11 @@ const DIFFICULTY = {
 
 const Settings = {
   key: 'jn_retroville_settings_v1',
-  data: { music: 0.6, sfx: 0.8, sensitivity: 1, quality: 'high', difficulty: 'normal', invertY: false, showFps: false },
+  data: { music: 0.6, sfx: 0.8, sensitivity: 1, quality: 'high', difficulty: 'normal', invertY: false, showFps: false, camera: 'chase' },
   load() {
     try { Object.assign(this.data, JSON.parse(localStorage.getItem(this.key) || '{}')); } catch (e) { /* storage unavailable */ }
     if (!DIFFICULTY[this.data.difficulty]) this.data.difficulty = 'normal';
+    if (this.data.camera !== 'iso') this.data.camera = 'chase';
   },
   save() { try { localStorage.setItem(this.key, JSON.stringify(this.data)); } catch (e) { /* storage unavailable */ } },
   apply() {

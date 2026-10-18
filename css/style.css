@@ -50,7 +50,7 @@ summary { cursor: pointer; font-weight: 700; color: var(--atom); text-transform:
 .atom span:nth-child(3) { transform: rotate(-60deg); animation-delay: -4s; }
 .atom i { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: var(--flurp); box-shadow: 0 0 18px var(--flurp); }
 @keyframes spin { from { rotate: 0deg; } to { rotate: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .atom span { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .atom span, .modal { animation: none; } }
 
 /* ---------- Buttons ---------- */
 .btn {

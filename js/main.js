@@ -92,6 +92,17 @@ function padAction(a) {
   }
 }
 
+// Third-person view captures the mouse so moving it turns the camera.
+function lockPointer() {
+  if (R3.cam.mode !== 'chase' || !G.started || UI.isOpen() || G.noPointerLock || document.pointerLockElement === canvas) return;
+  try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => pointerLockFailed()); } catch (err) { pointerLockFailed(); }
+}
+function pointerLockFailed() {
+  if (G.noPointerLock) return;
+  G.noPointerLock = true;
+  G.toast('Mouse capture is blocked here. Hold the right mouse button and move the mouse to look around.');
+}
+
 function toggleFullscreen() {
   if (window.desktopApp) return window.desktopApp.toggleFullscreen();
   try {
@@ -145,10 +156,15 @@ function setupInput(canvas) {
   canvas.addEventListener('mousedown', (e) => {
     if (!G.started || UI.isOpen()) return;
     Sfx.init();
-    if (R3.cam.mode === 'chase' && document.pointerLockElement !== canvas) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* pointer lock unavailable */ } }
+    // first click in third-person just grabs the mouse; it doesn't fire
+    if (R3.cam.mode === 'chase' && !G.noPointerLock && document.pointerLockElement !== canvas) { lockPointer(); return; }
     if (e.button === 0) { Input.mouseDown = true; Input.firePressed = true; }
   });
-  document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && R3.cam.mode === 'chase' && G.started && !UI.isOpen()) UI.pause(); });
+  document.addEventListener('pointerlockerror', pointerLockFailed);
+  document.addEventListener('pointerlockchange', () => {
+    // a lock that lands after a menu opened would trap the cursor behind it
+    if (document.pointerLockElement && UI.isOpen()) { document.exitPointerLock(); return; }
+    if (!document.pointerLockElement && R3.cam.mode === 'chase' && G.started && !UI.isOpen()) UI.pause(); });
   window.addEventListener('mouseup', (e) => { if (e.button === 0) Input.mouseDown = false; });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('wheel', (e) => {
@@ -200,6 +216,7 @@ function startGame(continueSave) {
     const m = G.maps[save.pos.map], spot = m.findOpen(save.pos.x, save.pos.y, G.player.r, 'walk');
     G.changeMap(save.pos.map, spot);
   }
+  R3.cam.yaw = G.player.facing = -Math.PI / 2;
   R3.update(0, true);
   if (!Missions.completed.has('tutorial')) {
     UI.dialogue({ name: 'Goddard', text: 'BARK! BARK! <i>(Translation: Jimmy, strange readings all over Retroville. Get to the lab!)</i>', buttons: [{ label: "Let's go!", action: () => Missions.start(Missions.def('tutorial')) }] });
@@ -208,6 +225,7 @@ function startGame(continueSave) {
     if (resume && Missions.isAvailable(resume)) Missions.start(resume);
     G.toast(resume ? `Welcome back, Jimmy! Resuming "${resume.title}".` : 'Welcome back, Jimmy! Press Q for your mission log.');
   }
+  lockPointer(); // no-op while the intro dialogue is up; closing it grabs the mouse
 }
 
 G.save = function () {
@@ -403,16 +421,18 @@ function resize() {
   hud.style.width = G.W + 'px'; hud.style.height = G.H + 'px';
 }
 
-function toggleCamera() {
+function setCameraMode(mode) {
   const c = R3.cam;
-  c.mode = c.mode === 'iso' ? 'chase' : 'iso';
-  if (c.mode === 'chase') {
+  c.mode = mode;
+  Settings.data.camera = mode; Settings.save();
+  if (mode === 'chase') {
     c.yaw = G.player.vehicle ? G.player.vehicle.angle : G.player.facing;
-    G.toast('Third-person view: move the mouse to look around (click to lock the cursor). Press C to switch back.');
-  } else {
-    if (document.pointerLockElement) document.exitPointerLock();
-    G.toast('Overhead view. Press C for third-person.');
-  }
+    lockPointer();
+  } else if (document.pointerLockElement) document.exitPointerLock();
+}
+function toggleCamera() {
+  setCameraMode(R3.cam.mode === 'iso' ? 'chase' : 'iso');
+  G.toast(R3.cam.mode === 'chase' ? 'Third-person view. Press C for the overhead view.' : 'Overhead view: aim with the mouse. Press C to go back to third-person.');
 }
 
 function update(dt) {
@@ -527,6 +547,7 @@ function boot() {
   Settings.load();
   UI.init();
   R3.init(canvas);
+  R3.cam.mode = Settings.data.camera;
   Settings.apply();
   resize();
   window.addEventListener('resize', resize);

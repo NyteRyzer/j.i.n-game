@@ -18,11 +18,14 @@ const NPC_DEFS = [
 ];
 
 const CITIZEN_LOOK_PARTS = {
-  skin: ['#f6c89f', '#e9b48a', '#c88a5a', '#7a4a2a', '#f0d0b8'],
-  hair: ['#1a1a1a', '#6b3a1e', '#e0c050', '#a03a2a', '#8a8a8a', '#3a2a1a'],
-  hairStyle: ['short', 'curly', 'ponytail', 'buzz', 'bun', 'swoop', 'bald'],
-  shirt: ['#e2312f', '#3fa7ff', '#4fc06a', '#ffb23f', '#b34fd8', '#ff7aa8', '#4a4a6a', '#ffffff'],
-  pants: ['#3a5fcd', '#3a3a4a', '#7a5a3a', '#5a6a3a', '#2b3a7a'],
+  skin: ['#f6c89f', '#e9b48a', '#c88a5a', '#7a4a2a', '#f0d0b8', '#a8693f'],
+  hair: ['#1a1a1a', '#6b3a1e', '#e0c050', '#a03a2a', '#8a8a8a', '#3a2a1a', '#d0d0d8'],
+  hairStyle: ['short', 'curly', 'ponytail', 'buzz', 'bun', 'swoop', 'bald', 'cap', 'headband'],
+  shirt: ['#e2312f', '#3fa7ff', '#4fc06a', '#ffb23f', '#b34fd8', '#ff7aa8', '#4a4a6a', '#ffffff', '#2ab0a0', '#f0d040'],
+  pants: ['#3a5fcd', '#3a3a4a', '#7a5a3a', '#5a6a3a', '#2b3a7a', '#c8b89a'],
+  shoes: ['#f4f4f4', '#2a2a2a', '#e2312f', '#3fa7ff', '#6a4a2a', '#ffb23f'],
+  brows: ['neutral', 'up', 'arch', 'worried'],
+  mouth: ['smile', 'smile', 'grin', 'smirk', 'o'],
 };
 const CITIZEN_SPOTS = [[30, 48], [56, 22], [62, 35], [92, 48], [97, 30], [70, 66], [88, 66], [66, 68], [82, 76], [40, 78], [27, 60], [138, 40], [132, 46], [135, 60], [140, 90], [72, 88], [86, 86], [12, 50], [100, 80], [120, 22]];
 const CITIZEN_LINES = ['Nice day in Retroville, huh?', 'Is that the Neutron kid? Uh oh.', 'Did you see the lights in the sky last night?', 'My cat got shrunk last week. Long story.', 'I just want ONE week without an alien invasion.', 'Have you tried the Purple Flurp at the Candy Bar?', 'Retroland has a new coaster!', 'Keep that robot dog away from my petunias.'];
@@ -30,10 +33,24 @@ const CITIZEN_LINES = ['Nice day in Retroville, huh?', 'Is that the Neutron kid?
 function makeCitizens() {
   const rng = mulberry32(7);
   const pickR = (a) => a[Math.floor(rng() * a.length)];
-  return CITIZEN_SPOTS.map(([x, y]) => new NPC({
-    name: 'Citizen', citizen: true, ...tp(x, y), wander: 120, speed: 35, lines: CITIZEN_LINES,
-    look: { skin: pickR(CITIZEN_LOOK_PARTS.skin), hair: pickR(CITIZEN_LOOK_PARTS.hair), hairStyle: pickR(CITIZEN_LOOK_PARTS.hairStyle), shirt: pickR(CITIZEN_LOOK_PARTS.shirt), pants: pickR(CITIZEN_LOOK_PARTS.pants), height: 1 + rng() * 0.45, wide: 1 + rng() * 0.3 },
-  }));
+  const P = CITIZEN_LOOK_PARTS;
+  return CITIZEN_SPOTS.map(([x, y]) => {
+    // Either a kid or a grown-up: in-between proportions look wrong in this style.
+    const kid = rng() < 0.35;
+    const look = {
+      kid, skin: pickR(P.skin), hair: pickR(P.hair), hairStyle: pickR(P.hairStyle), shirt: pickR(P.shirt), pants: pickR(P.pants),
+      shoes: pickR(P.shoes), brows: pickR(P.brows), mouth: pickR(P.mouth), capColor: pickR(P.shirt),
+      height: kid ? 1 + rng() * 0.12 : 1.3 + rng() * 0.15, wide: 1 + rng() * 0.3,
+    };
+    if (!kid && look.hair !== '#d0d0d8' && rng() < 0.15) look.hair = '#b8b8c0'; // greying
+    look.belly = !kid && rng() < 0.35;
+    look.glasses = rng() < 0.2;
+    if (!kid && rng() < 0.25) { look.dress = true; look.pants = look.shirt; if (look.hairStyle === 'bald' || look.hairStyle === 'cap') look.hairStyle = 'bun'; }
+    if (!kid && !look.dress && rng() < 0.2) look.mustache = true;
+    if (!kid && !look.dress && rng() < 0.2) { look.vest = pickR(P.pants); look.collar = true; }
+    if (kid && look.hairStyle === 'bald') look.hairStyle = 'buzz';
+    return new NPC({ name: 'Citizen', citizen: true, ...tp(x, y), wander: 120, speed: kid ? 45 : 35, lines: CITIZEN_LINES, look });
+  });
 }
 
 // Step types: goto, map, station, talk, kill, collect, boss, race

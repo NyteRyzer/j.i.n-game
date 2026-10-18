@@ -143,19 +143,21 @@ function explosion(m, x, y, radius, dmg, team, opts = {}) {
 // ---------------------------------------------------------------------------
 // Character art
 // ---------------------------------------------------------------------------
+// Character looks. kid = big head, short body (the show's kids); adults are taller with smaller heads.
+// brows: neutral|up|angry|worried|arch   mouth: smile|grin|smirk|frown|o
 const LOOKS = {
-  jimmy: { skin: '#f6c89f', hair: '#6b3a1e', hairStyle: 'jimmy', shirt: '#e2312f', pants: '#3a5fcd', logo: true },
-  carl: { skin: '#f9d6b8', hair: '#e07b2a', hairStyle: 'curly', shirt: '#4fb07a', pants: '#7a5a3a', glasses: true, wide: 1.25 },
-  sheen: { skin: '#e9b48a', hair: '#1f1f2a', hairStyle: 'spiky', shirt: '#3fa7ff', pants: '#2b3a7a', height: 1.15 },
-  cindy: { skin: '#f8d0b0', hair: '#f5d34a', hairStyle: 'ponytail', shirt: '#4fc06a', pants: '#e0e0f0' },
-  libby: { skin: '#7a4a2a', hair: '#1a1a1a', hairStyle: 'headband', shirt: '#b34fd8', pants: '#3a2a5a' },
-  hugh: { skin: '#f6c89f', hair: '#7a5a3a', hairStyle: 'short', shirt: '#e8e0c0', pants: '#5a6a3a', height: 1.4, wide: 1.2 },
-  judy: { skin: '#f6c89f', hair: '#6b3a1e', hairStyle: 'beehive', shirt: '#ff7aa8', pants: '#ff7aa8', height: 1.35, dress: true },
-  fowl: { skin: '#f0d0b8', hair: '#c8c8d0', hairStyle: 'bun', shirt: '#8a5ab0', pants: '#8a5ab0', glasses: true, height: 1.25, dress: true },
-  sam: { skin: '#e9b48a', hair: '#3a2a1a', hairStyle: 'bald', shirt: '#ffffff', pants: '#3a3a4a', height: 1.4, wide: 1.4, apron: true },
-  butch: { skin: '#f6c89f', hair: '#e0c050', hairStyle: 'buzz', shirt: '#7a3a3a', pants: '#3a3a3a', height: 1.2, wide: 1.3 },
-  nick: { skin: '#f6c89f', hair: '#1a1a1a', hairStyle: 'swoop', shirt: '#2a2a3a', pants: '#5a5a7a', height: 1.15 },
-  mayor: { skin: '#f6c89f', hair: '#8a8a8a', hairStyle: 'short', shirt: '#3a3a6a', pants: '#3a3a6a', height: 1.4, wide: 1.3 },
+  jimmy: { kid: true, skin: '#f6c89f', hair: '#6b3a1e', hairStyle: 'jimmy', shirt: '#e2312f', pants: '#3a5fcd', shoes: '#f4f4f4', logo: 'atom', brows: 'up', mouth: 'grin' },
+  carl: { kid: true, skin: '#f9d6b8', hair: '#e07b2a', hairStyle: 'curly', shirt: '#7fcf9a', pants: '#8a6a44', shoes: '#6a4a2a', glasses: true, wide: 1.25, belly: true, brows: 'worried', mouth: 'o' },
+  sheen: { kid: true, skin: '#e9b48a', hair: '#1f1f2a', hairStyle: 'spiky', shirt: '#3fa7ff', pants: '#2b3a7a', shoes: '#e2312f', logo: 'ultra', height: 1.12, brows: 'up', mouth: 'grin' },
+  cindy: { kid: true, skin: '#f8d0b0', hair: '#f5d34a', hairStyle: 'ponytail', shirt: '#4fc06a', pants: '#f0f0f8', capri: true, shoes: '#ff8ab8', brows: 'arch', mouth: 'smirk' },
+  libby: { kid: true, skin: '#7a4a2a', hair: '#1a1a1a', hairStyle: 'headband', shirt: '#b34fd8', pants: '#3a2a5a', shoes: '#ffffff', brows: 'neutral', mouth: 'smile' },
+  hugh: { skin: '#f6c89f', hair: '#7a5a3a', hairStyle: 'short', shirt: '#fffbe8', vest: '#3f7a4a', collar: true, pants: '#6b6f4a', shoes: '#5a3a2a', height: 1.42, wide: 1.25, belly: true, brows: 'up', mouth: 'grin' },
+  judy: { skin: '#f6c89f', hair: '#6b3a1e', hairStyle: 'beehive', shirt: '#ff7aa8', pants: '#ff7aa8', dress: true, shoes: '#c0305a', height: 1.38, brows: 'arch', mouth: 'smile', lipstick: true },
+  fowl: { skin: '#f0d0b8', hair: '#c8c8d0', hairStyle: 'bun', shirt: '#8a5ab0', pants: '#8a5ab0', dress: true, pearls: true, glasses: true, shoes: '#3a2a4a', height: 1.28, brows: 'worried', mouth: 'smile' },
+  sam: { skin: '#e9b48a', hair: '#3a2a1a', hairStyle: 'bald', shirt: '#ffffff', pants: '#3a3a4a', apron: '#ffb0c8', mustache: true, shoes: '#2a2a2a', height: 1.42, wide: 1.45, belly: true, brows: 'neutral', mouth: 'smile' },
+  butch: { kid: true, skin: '#f6c89f', hair: '#e0c050', hairStyle: 'buzz', shirt: '#7a3a3a', pants: '#3a3a3a', shoes: '#2a2a2a', height: 1.2, wide: 1.35, brows: 'angry', mouth: 'smirk' },
+  nick: { kid: true, skin: '#f6c89f', hair: '#1a1a1a', hairStyle: 'swoop', shirt: '#f4f4f4', jacket: '#2a2a3a', pants: '#5a5a7a', shoes: '#1a1a1a', height: 1.15, brows: 'neutral', mouth: 'smirk' },
+  mayor: { skin: '#f6c89f', hair: '#8a8a8a', hairStyle: 'short', shirt: '#3a3a6a', longSleeves: true, tie: '#c0303a', collar: true, pants: '#3a3a6a', shoes: '#1a1a1a', height: 1.42, wide: 1.3, belly: true, brows: 'up', mouth: 'grin' },
 };
 
 function drawPerson(ctx, x, y, L, facing, phase, opts = {}) {

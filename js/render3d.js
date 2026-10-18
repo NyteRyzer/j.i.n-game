@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 const R3 = {
-  cam: { mode: 'iso', zoom: 1, yaw: -Math.PI / 2, pitch: 0.42, lastMouse: -10 },
+  cam: { mode: 'chase', zoom: 1, yaw: -Math.PI / 2, pitch: 0.32, lastMouse: -10 },
   reg: new Map(),
   projMeshes: new Map(),
   ringPool: [], ballPool: [], gatePool: [],
@@ -381,6 +381,10 @@ const R3 = {
     const md = rec.model, root = md.root;
     root.visible = true;
     root.position.set(e.x / TILE, 0, e.y / TILE);
+    if (e !== G.player && !(e instanceof Vehicle) && !e.boss && G.started) {
+      const cp = this.camera.position, dx = cp.x - root.position.x, dz = cp.z - root.position.z;
+      if (dx * dx + dz * dz > 85 * 85) { root.visible = false; rec.px = e.x; rec.py = e.y; return; }
+    }
     const moved = Math.hypot(e.x - rec.px, e.y - rec.py) / Math.max(dt, 1e-4);
     rec.px = e.x; rec.py = e.y;
     rec.moving = moved > 8;
@@ -411,6 +415,11 @@ const R3 = {
     }
     if (e instanceof Clone || e instanceof NPC) {
       face(e.facing);
+      if (e instanceof NPC) { // wave hello when Jimmy walks up
+        const near = dist(e, G.player) < 90 && !G.player.vehicle;
+        if (near && !rec.near && !e.moving) md.wave = 1.5;
+        rec.near = near;
+      }
       animateCharacter(md, e.walkPhase || 0, e instanceof NPC ? e.moving : rec.moving, dt);
       if (e instanceof Clone) root.visible = !(e.life < 2 && Math.floor(G.time * 10) % 2 === 0);
       return;
@@ -533,11 +542,13 @@ const R3 = {
     }
     if (c.mode === 'chase') {
       if (p.vehicle && G.time - c.lastMouse > 1.2) c.yaw += angleDiff(c.yaw, p.vehicle.angle) * Math.min(1, dt * 2.5);
-      const d = p.vehicle ? 8 : 6;
+      const d = p.vehicle ? 8 : 5.2;
       const hgt = 1.2 + Math.sin(c.pitch) * d, hor = Math.cos(c.pitch) * d;
       const alt = p.vehicle ? p.vehicle.alt * 0.095 : p.alt * 0.095;
       const want = new THREE.Vector3(f.x - Math.cos(c.yaw) * hor, f.y + alt + hgt, f.z - Math.sin(c.yaw) * hor);
-      cam.position.lerp(want, snap ? 1 : Math.min(1, dt * 10));
+      this.keepCameraOutOfWalls(new THREE.Vector3(f.x, alt + 1.4, f.z), want);
+      const jump = cam.position.distanceTo(want) > 25;
+      cam.position.lerp(want, snap || jump ? 1 : Math.min(1, dt * 10));
       const lookAt = new THREE.Vector3(f.x + Math.cos(c.yaw) * 2, alt + 1.3, f.z + Math.sin(c.yaw) * 2);
       this.look.lerp(lookAt, snap ? 1 : Math.min(1, dt * 12));
     } else {
@@ -548,6 +559,26 @@ const R3 = {
       this.look.lerp(new THREE.Vector3(f.x, 0.6, f.z), jump ? 1 : k);
     }
     cam.lookAt(this.look);
+  },
+
+  // Third-person: pull the camera in front of any building or lab wall between it and Jimmy.
+  wallHeight(m, tx, ty) {
+    const t = m.get(tx, ty);
+    if (t === T.BUILDING) return 4.3;
+    if (t === T.LABWALL) return m.name !== 'lab' ? 99 : ty === m.h - 1 ? 0.3 : ty > 1 && tx > 0 && tx < m.w - 1 ? 1.25 : 2.7;
+    return 0;
+  },
+  keepCameraOutOfWalls(from, to) {
+    const m = G.map, steps = 20;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = lerp(from.x, to.x, t), y = lerp(from.y, to.y, t), z = lerp(from.z, to.z, t);
+      if (y < this.wallHeight(m, Math.floor(x), Math.floor(z)) + 0.2) {
+        const keep = Math.max(0.12, (i - 1.5) / steps);
+        to.set(lerp(from.x, to.x, keep), lerp(from.y, to.y, keep) + (1 - keep) * 0.8, lerp(from.z, to.z, keep));
+        return;
+      }
+    }
   },
 
   // Map-pixel point under the mouse (ground plane at waist height)

@@ -26,6 +26,8 @@ const UI = {
     m.el.remove();
     if (m.onClose) m.onClose();
     G.input.clearMouse();
+    // back to the game: re-grab the mouse in third-person (still inside the click/key gesture)
+    setTimeout(() => { if (!this.isOpen() && typeof lockPointer === 'function') lockPointer(); }, 0);
   },
   open(html, opts = {}) {
     this.close();
@@ -33,6 +35,7 @@ const UI = {
     el.className = 'modal-wrap';
     el.innerHTML = `<div class="modal ${opts.cls || ''}" role="dialog" aria-modal="true">${html}</div>`;
     this.root.appendChild(el);
+    if (document.pointerLockElement) document.exitPointerLock(); // free the cursor for the menu
     el.addEventListener('mousedown', (e) => { if (e.target === el && !opts.sticky) this.close(); });
     this.modal = { el, onClose: opts.onClose };
     const first = el.querySelector('button');
@@ -167,12 +170,12 @@ const UI = {
 
   controlsHtml() {
     return `<div class="controls">
-      <div><kbd>W A S D</kbd> Move / drive</div><div><kbd>Mouse</kbd> Aim</div>
+      <div><kbd>W A S D</kbd> Move / drive</div><div><kbd>Mouse</kbd> Look and aim</div>
       <div><kbd>Click</kbd> Use invention / vehicle weapon</div><div><kbd>1</kbd>–<kbd>8</kbd> / <kbd>Wheel</kbd> Pick invention</div>
       <div><kbd>Shift</kbd> Sprint / vehicle boost</div><div><kbd>E</kbd> Talk · enter · use · get in/out</div>
       <div><kbd>G</kbd> Goddard: follow / attack / stay</div><div><kbd>V</kbd> Ride the Goddard Bike</div>
       <div><kbd>Q</kbd> Mission log</div><div><kbd>M</kbd> Town map</div>
-      <div><kbd>C</kbd> Overhead / third-person camera</div><div><kbd>Z</kbd> Zoom (overhead view)</div>
+      <div><kbd>C</kbd> Third-person / overhead camera</div><div><kbd>Z</kbd> Zoom (overhead view)</div>
       <div><kbd>Esc</kbd> Pause</div><div><kbd>N</kbd> Mute sound</div>
       <div><kbd>F11</kbd> Fullscreen</div><div><kbd>F3</kbd> Frame-rate counter</div>
     </div>
@@ -195,6 +198,8 @@ const UI = {
         <label for="set-sens">Mouse &amp; stick sensitivity</label><input type="range" id="set-sens" min="0.3" max="2.5" step="0.1" value="${d.sensitivity}">
         <label for="set-quality">Graphics</label>
         <select id="set-quality">${['high', 'medium', 'low'].map((q) => `<option value="${q}" ${d.quality === q ? 'selected' : ''}>${q[0].toUpperCase() + q.slice(1)}${q === 'low' ? ' (no shadows, fastest)' : q === 'high' ? ' (sharp shadows)' : ''}</option>`).join('')}</select>
+        <label for="set-camera">Camera</label>
+        <select id="set-camera"><option value="chase" ${R3.cam.mode === 'chase' ? 'selected' : ''}>Third-person (behind Jimmy)</option><option value="iso" ${R3.cam.mode === 'iso' ? 'selected' : ''}>Overhead</option></select>
         <label for="set-diff">Difficulty</label>
         <select id="set-diff">${Object.entries(DIFFICULTY).map(([k, v]) => `<option value="${k}" ${d.difficulty === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
         <label for="set-invert">Invert look up/down</label><input type="checkbox" id="set-invert" ${d.invertY ? 'checked' : ''}>
@@ -211,6 +216,7 @@ const UI = {
     bind('set-sens', 'sensitivity', (t) => +t.value);
     bind('set-quality', 'quality', (t) => t.value);
     bind('set-diff', 'difficulty', (t) => t.value);
+    el.querySelector('#set-camera').addEventListener('change', (e) => { R3.cam.mode = e.target.value; Settings.data.camera = e.target.value; Settings.save(); });
     bind('set-invert', 'invertY', (t) => t.checked);
     bind('set-fps', 'showFps', (t) => t.checked);
     el.querySelector('[data-full]').addEventListener('click', toggleFullscreen);
@@ -425,10 +431,18 @@ function drawHUD(ctx, W, H) {
   if (!UI.isOpen()) {
     const chase = R3.cam.mode === 'chase';
     const padAim = Input.usingPad && !chase;
-    const { x, y } = chase ? { x: W / 2, y: H * 0.42 } : padAim ? R3.worldToScreen(Input.worldMouse.x, Input.worldMouse.y, 0.9) : G.input.mouse;
+    const { x, y } = chase || padAim ? R3.worldToScreen(Input.worldMouse.x, Input.worldMouse.y, 0.95 + (p.alt || 0) * 0.095) : G.input.mouse;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.moveTo(x - 14, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 14); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 14); ctx.stroke();
     ctx.fillStyle = INVENTIONS[p.invIndex].color; ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill();
+  }
+
+  // third-person: remind the player how to look around until the mouse is captured
+  if (R3.cam.mode === 'chase' && !UI.isOpen() && !Input.usingPad && document.pointerLockElement !== document.getElementById('game')) {
+    const msg = G.noPointerLock ? 'Hold the right mouse button to look around' : 'Click to look around with the mouse';
+    ctx.font = hudFont(14); const tw = ctx.measureText(msg).width + 32;
+    ctx.fillStyle = 'rgba(16,19,40,0.82)'; roundRect(ctx, W / 2 - tw / 2, H * 0.58, tw, 34, 17); ctx.fill();
+    ctx.fillStyle = '#7ff0ff'; ctx.textAlign = 'center'; ctx.fillText(msg, W / 2, H * 0.58 + 18);
   }
 
   if (Settings.data.showFps) {
